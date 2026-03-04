@@ -1,0 +1,218 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Fonts ──────────────────────────────────────────────────── */
+@font-face {
+  font-family: "Fraunces";
+  src: url("/assets/fonts/Fraunces.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/assets/fonts/InstrumentSerif.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "General Sans";
+  src: url("/assets/fonts/GeneralSans.woff2") format("woff2");
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ─── Design Tokens ──────────────────────────────────────────── */
+@layer base {
+  :root {
+    --radius: 0.5rem;
+
+    /* Cinematic dark memorial palette */
+    --background: 0.095 0.015 42;
+    --foreground: 0.95 0.025 75;
+    --card: 0.145 0.018 45;
+    --card-foreground: 0.95 0.025 75;
+    --popover: 0.155 0.02 45;
+    --popover-foreground: 0.95 0.025 75;
+
+    /* Warm gold primary */
+    --primary: 0.78 0.14 80;
+    --primary-foreground: 0.11 0.01 45;
+
+    /* Muted charcoal secondary */
+    --secondary: 0.22 0.02 50;
+    --secondary-foreground: 0.88 0.02 75;
+
+    --muted: 0.18 0.015 48;
+    --muted-foreground: 0.58 0.03 65;
+
+    /* Soft rose accent */
+    --accent: 0.28 0.04 20;
+    --accent-foreground: 0.92 0.035 60;
+
+    --destructive: 0.62 0.22 25;
+    --destructive-foreground: 0.97 0.01 40;
+
+    --border: 0.22 0.02 50;
+    --input: 0.20 0.02 48;
+    --ring: 0.78 0.14 80;
+
+    --chart-1: 0.78 0.14 80;
+    --chart-2: 0.65 0.18 55;
+    --chart-3: 0.55 0.12 25;
+    --chart-4: 0.42 0.09 200;
+    --chart-5: 0.72 0.16 95;
+
+    /* Sidebar */
+    --sidebar: 0.10 0.012 45;
+    --sidebar-foreground: 0.92 0.025 75;
+    --sidebar-primary: 0.78 0.14 80;
+    --sidebar-primary-foreground: 0.11 0.01 45;
+    --sidebar-accent: 0.18 0.018 45;
+    --sidebar-accent-foreground: 0.92 0.025 75;
+    --sidebar-border: 0.20 0.02 48;
+    --sidebar-ring: 0.78 0.14 80;
+
+    /* Custom tokens */
+    --gold: 0.78 0.14 80;
+    --gold-light: 0.88 0.10 85;
+    --gold-dim: 0.60 0.10 78;
+    --rose: 0.72 0.12 15;
+    --charcoal: 0.115 0.015 45;
+    --charcoal-light: 0.18 0.018 48;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "General Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ─── Custom utilities ──────────────────────────────────────── */
+@layer utilities {
+  .font-display {
+    font-family: "Fraunces", serif;
+  }
+
+  .font-serif-alt {
+    font-family: "Instrument Serif", serif;
+  }
+
+  .text-gold {
+    color: oklch(var(--gold));
+  }
+
+  .text-gold-dim {
+    color: oklch(var(--gold-dim));
+  }
+
+  .bg-gold {
+    background-color: oklch(var(--gold));
+  }
+
+  .border-gold {
+    border-color: oklch(var(--gold));
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 40px oklch(var(--gold) / 0.15), 0 0 80px oklch(var(--gold) / 0.06);
+  }
+
+  .text-gradient-gold {
+    background: linear-gradient(135deg, oklch(0.88 0.10 85), oklch(0.78 0.14 80), oklch(0.62 0.12 72));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  }
+
+  .hero-gradient {
+    background:
+      radial-gradient(ellipse 80% 50% at 50% 0%, oklch(0.78 0.14 80 / 0.08) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 80%, oklch(0.72 0.12 15 / 0.06) 0%, transparent 50%),
+      oklch(0.115 0.015 45);
+  }
+
+  .card-glow {
+    box-shadow:
+      0 1px 0 0 oklch(var(--gold) / 0.15) inset,
+      0 0 0 1px oklch(var(--gold) / 0.08),
+      0 8px 32px oklch(0 0 0 / 0.4);
+  }
+
+  .card-glow-hover:hover {
+    box-shadow:
+      0 1px 0 0 oklch(var(--gold) / 0.3) inset,
+      0 0 0 1px oklch(var(--gold) / 0.18),
+      0 12px 48px oklch(0 0 0 / 0.5),
+      0 0 60px oklch(var(--gold) / 0.06);
+  }
+
+  /* Cinematic header gradient — amber/gold/copper over deep charcoal */
+  .header-cinematic {
+    background: linear-gradient(
+      135deg,
+      oklch(0.10 0.018 45) 0%,
+      oklch(0.12 0.025 52) 25%,
+      oklch(0.13 0.030 62) 50%,
+      oklch(0.12 0.025 52) 75%,
+      oklch(0.10 0.018 45) 100%
+    );
+    border-bottom: 1px solid oklch(0.78 0.14 80 / 0.15);
+    box-shadow:
+      0 1px 0 0 oklch(0.78 0.14 80 / 0.12) inset,
+      0 4px 24px oklch(0 0 0 / 0.5),
+      0 0 60px oklch(0.78 0.14 80 / 0.04);
+  }
+
+  /* Gold shimmer text */
+  .text-gradient-copper {
+    background: linear-gradient(135deg, oklch(0.88 0.10 85), oklch(0.78 0.14 80), oklch(0.70 0.16 65), oklch(0.78 0.14 80));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Star rating */
+  .star-gold {
+    color: oklch(0.85 0.16 82);
+    filter: drop-shadow(0 0 4px oklch(0.78 0.14 80 / 0.5));
+  }
+
+  /* FAQ accordion glow */
+  .faq-item {
+    background: oklch(0.145 0.018 45);
+    border: 1px solid oklch(0.22 0.02 50);
+    transition: border-color 0.2s ease;
+  }
+
+  .faq-item:hover,
+  .faq-item[data-state="open"] {
+    border-color: oklch(0.78 0.14 80 / 0.3);
+  }
+
+  /* Review card */
+  .review-card {
+    background: linear-gradient(135deg, oklch(0.155 0.022 52), oklch(0.145 0.018 45));
+    border: 1px solid oklch(0.78 0.14 80 / 0.12);
+  }
+}
