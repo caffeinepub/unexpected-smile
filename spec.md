@@ -1,41 +1,43 @@
 # Unexpected Smile
 
 ## Current State
-- Full-stack app with Motoko backend + React frontend
-- Backend has: Booking CRUD, PortfolioEntry CRUD (with sortOrder, embedUrl, thumbnailBlobId), hardcoded `packages` array (immutable, 3 packages), ClientMessage CRUD
-- Frontend has: Admin dashboard with Orders, Portfolio, Messages tabs
-- Portfolio admin: Add/Edit/Delete via Sheet form, sort order via numeric input (no Up/Down buttons)
-- Pricing section on homepage reads from `getPackages()` backend call, but packages are hardcoded in Motoko -- changes require code edits
-- No Pricing CMS tab in admin dashboard
-- blob-storage and authorization components are already selected
+
+Full-stack app with Motoko backend + React frontend. The backend uses an Authorization mixin (Internet Identity principal-based role check via `_initializeAccessControlWithSecret`). The admin UI login is a pure localStorage flag (email/password hardcoded on the frontend). The `useActor` hook calls `_initializeAccessControlWithSecret` only when an II identity is present -- so on the admin dashboard, if no II session exists, all admin-protected backend calls (portfolio CRUD, bookings, packages) throw "Unauthorized".
+
+Blob storage exists via `useBlobStorage`. Uploaded files return a hash. Currently the `thumbnailBlobId` field on `PortfolioEntry` and `Package` stores the raw hash, but the frontend renders `<img src={hash}>` directly, which is not a valid URL. The `getBlobURL(hash)` method in `useBlobStorage` converts the hash to a working HTTP URL but is not being called in rendering paths.
+
+The `PortfolioEntry` type has a `videoBlobId` field in both backend and `backend.d.ts`, but the CMS form has no MP4 upload field and the public gallery does not use `videoBlobId` for rendering.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Dynamic package management in backend: convert hardcoded `packages` array to a mutable `Map<PackageId, Package>` with seed data pre-loaded
-- New backend methods: `createPackage`, `updatePackage`, `deletePackage`, `reorderPackage` (admin-only)
-- Package model gains: `thumbnailBlobId: ?Text`, `isHidden: Bool`, `sortOrder: Nat` fields
-- Up/Down reorder buttons for portfolio entries in admin (replace reliance on manual sort order number input)
-- `reorderPortfolioEntry(id, direction: {#up; #down})` backend method for simple up/down swap
-- New "Pricing & Packages" tab in admin dashboard with full CRUD interface per package
-- Package cards in admin: editable Name, Price 1 (Video Only), Price 2 (Voice Addon), Details/Description, Thumbnail upload, Hide/Show toggle, Up/Down reorder
+- MP4 video file upload field to the portfolio CMS form (`PortfolioEntrySheet`)
+- HTML5 `<video>` player rendering in the public Tribute Gallery cards when `videoBlobId` is set
+- Auto-admin-token initialization in `useActor` so the backend grants admin role as soon as the actor is created (no II popup required for admin dashboard access)
 
 ### Modify
-- Backend: `packages` constant becomes mutable Map seeded with the 3 existing packages (exact pricing: ₹1000/₹1500, ₹2000/₹2500, ₹3000/₹3500) plus new fields (thumbnailBlobId=null, isHidden=false, sortOrder=1/2/3)
-- Backend: `getPackages()` returns only non-hidden packages sorted by sortOrder (public endpoint unchanged)
-- Backend: add `getAllPackages()` admin-only endpoint that returns all packages including hidden ones
-- Portfolio admin: replace manual "Sort Order" number input with Up/Down arrow buttons in the card grid
-- Admin dashboard Tabs: add "Pricing" tab between Portfolio and Messages
-- Homepage pricing section: already reads dynamically from `getPackages()` -- no change needed to wiring, only backend behavior changes
+- `useActor`: Always call `_initializeAccessControlWithSecret` on every actor creation (not only when II identity is present), so the backend recognizes the admin principal immediately
+- `PortfolioCard` (HomePage): Resolve `thumbnailBlobId` hash to HTTP URL via `getBlobURL` before rendering `<img>`. If `videoBlobId` is present, render a `<video>` player; if `embedUrl` is present, render an `<iframe>`
+- `PricingCard` (HomePage): Resolve `thumbnailBlobId` hash to HTTP URL via `getBlobURL` before rendering package thumbnail
+- `AdminDashboardPage` (PortfolioEntrySheet): Add MP4 file upload input alongside thumbnail upload. Store the video blob hash in `videoBlobId` on save. Show preview state for both thumbnail and video
 
 ### Remove
-- Manual sort order number input field from portfolio entry Sheet form (replaced by Up/Down buttons in the card list)
+- Nothing removed
 
 ## Implementation Plan
-1. Update `main.mo`: convert packages to mutable Map, seed with exact 3 packages + new fields, add createPackage/updatePackage/deletePackage/getAllPackages methods, add reorderPortfolioEntry method
-2. Regenerate backend.d.ts via generate_motoko_code
-3. Generate 3 cinematic placeholder images for package thumbnails (amber/gold/dark theme)
-4. Frontend: add Up/Down reorder buttons to portfolio cards in AdminDashboardPage, wire to reorderPortfolioEntry
-5. Frontend: add "Pricing" tab to AdminDashboardPage with PackageSheet form (name, prices, details, thumbnail upload, hide toggle, up/down reorder)
-6. Frontend: update homepage PricingCard to use dynamic thumbnailBlobId if present, fallback to gradient placeholder
-7. Deploy
+
+1. Fix `useActor.ts`: Remove the condition `if (!isAuthenticated)` that skips `_initializeAccessControlWithSecret`. Always create actor and always call `_initializeAccessControlWithSecret` with the admin token regardless of II identity.
+
+2. Fix blob URL resolution in `HomePage.tsx`:
+   - Create a `BlobImage` helper component that takes a `blobId` (hash or null), calls `getBlobURL` async, and renders the resolved URL in an `<img>` tag.
+   - In `PortfolioCard`: use `BlobImage` for thumbnail. Add logic: if `videoBlobId` → render `<video>` player with thumbnail as poster; else if `embedUrl` → render `<iframe>`; else → placeholder.
+   - In `PricingCard`: use `BlobImage` for package thumbnail.
+
+3. Fix blob URL resolution in `AdminDashboardPage.tsx`:
+   - Portfolio card thumbnails in the admin list view should show resolved image URLs.
+
+4. Add MP4 upload to `PortfolioEntrySheet`:
+   - Add a video file input that accepts `video/mp4`.
+   - Upload via `uploadBlob`, store hash in `videoBlobId` state.
+   - Pass `videoBlobId` in the `PortfolioEntryInput` on save.
+   - Show upload progress and confirmation state for video.

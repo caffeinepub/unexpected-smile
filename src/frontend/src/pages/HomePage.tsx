@@ -31,8 +31,9 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Package, PortfolioEntry } from "../backend.d";
+import { useBlobStorage } from "../hooks/useBlobStorage";
 import {
   useGetPackages,
   useGetPublishedPortfolioEntries,
@@ -64,6 +65,106 @@ function formatPrice(price: bigint): string {
   return price.toLocaleString("en-IN");
 }
 
+// ─── BlobImage ─────────────────────────────────────────────────────────────────
+// Resolves a blob hash to a working URL via getBlobURL, renders <img> when ready.
+function BlobImage({
+  blobId,
+  alt,
+  className,
+  fallback,
+}: {
+  blobId: string;
+  alt: string;
+  className?: string;
+  fallback?: React.ReactNode;
+}) {
+  const { getBlobURL } = useBlobStorage();
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getBlobURL(blobId).then((resolved) => {
+      if (!cancelled) {
+        setUrl(resolved);
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [blobId, getBlobURL]);
+
+  if (loading) {
+    return <Skeleton className={className ?? "w-full h-full"} />;
+  }
+  if (!url) {
+    return <>{fallback}</>;
+  }
+  return <img src={url} alt={alt} className={className} />;
+}
+
+// ─── BlobVideo ─────────────────────────────────────────────────────────────────
+// Resolves a video blob hash (and optional poster blob hash) to working URLs.
+function BlobVideo({
+  videoBlobId,
+  posterBlobId,
+  className,
+}: {
+  videoBlobId: string;
+  posterBlobId?: string;
+  className?: string;
+}) {
+  const { getBlobURL } = useBlobStorage();
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetches: Promise<void>[] = [
+      getBlobURL(videoBlobId).then((u) => {
+        if (!cancelled) setVideoUrl(u);
+      }),
+    ];
+    if (posterBlobId) {
+      fetches.push(
+        getBlobURL(posterBlobId).then((u) => {
+          if (!cancelled) setPosterUrl(u);
+        }),
+      );
+    }
+    Promise.all(fetches).then(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [videoBlobId, posterBlobId, getBlobURL]);
+
+  if (loading) {
+    return <Skeleton className={className ?? "w-full h-full"} />;
+  }
+  if (!videoUrl) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-charcoal to-muted">
+        <Film className="w-12 h-12 text-gold-dim opacity-40" />
+      </div>
+    );
+  }
+  return (
+    // biome-ignore lint/a11y/useMediaCaption: tribute videos are user-uploaded, captions provided by content owner
+    <video
+      src={videoUrl}
+      poster={posterUrl ?? undefined}
+      controls
+      className={className ?? "w-full h-full object-cover"}
+      preload="metadata"
+    />
+  );
+}
+
 function scrollToSection(id: string) {
   const el = document.getElementById(id);
   if (el) {
@@ -84,32 +185,59 @@ function PortfolioCard({
   index: number;
   onPlayClick: (entry: PortfolioEntry) => void;
 }) {
+  const hasVideo = !!entry.videoBlobId;
+  const hasEmbed = !!entry.embedUrl;
+  const isClickable = hasEmbed && !hasVideo;
+
   return (
     <motion.div
       variants={fadeUp}
       custom={index}
       data-ocid={`portfolio.item.${index + 1}`}
-      className="group relative overflow-hidden rounded-xl bg-card card-glow card-glow-hover cursor-pointer transition-all duration-300"
-      onClick={() => entry.embedUrl && onPlayClick(entry)}
+      className={`group relative overflow-hidden rounded-xl bg-card card-glow transition-all duration-300 ${isClickable ? "cursor-pointer card-glow-hover" : ""}`}
+      onClick={() => isClickable && onPlayClick(entry)}
     >
-      {/* Thumbnail */}
+      {/* Media area */}
       <div className="aspect-video bg-muted relative overflow-hidden">
-        {entry.thumbnailBlobId ? (
-          <img
-            src={entry.thumbnailBlobId}
-            alt={entry.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+        {hasVideo ? (
+          // Direct MP4 upload — render native HTML5 video player
+          <BlobVideo
+            videoBlobId={entry.videoBlobId!}
+            posterBlobId={entry.thumbnailBlobId}
+            className="w-full h-full object-cover"
           />
+        ) : entry.thumbnailBlobId ? (
+          // Thumbnail image with resolved blob URL
+          <>
+            <BlobImage
+              blobId={entry.thumbnailBlobId}
+              alt={entry.title}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              fallback={
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-charcoal to-muted">
+                  <Film className="w-12 h-12 text-gold-dim opacity-40" />
+                </div>
+              }
+            />
+            {hasEmbed && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <div className="w-14 h-14 rounded-full bg-gold/90 flex items-center justify-center shadow-gold-md">
+                  <Play className="w-6 h-6 text-primary-foreground ml-1" />
+                </div>
+              </div>
+            )}
+          </>
         ) : (
+          // No media at all — placeholder
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-charcoal to-muted">
             <Film className="w-12 h-12 text-gold-dim opacity-40" />
-          </div>
-        )}
-        {entry.embedUrl && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <div className="w-14 h-14 rounded-full bg-gold/90 flex items-center justify-center shadow-gold-md">
-              <Play className="w-6 h-6 text-primary-foreground ml-1" />
-            </div>
+            {hasEmbed && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <div className="w-14 h-14 rounded-full bg-gold/90 flex items-center justify-center shadow-gold-md">
+                  <Play className="w-6 h-6 text-primary-foreground ml-1" />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -121,7 +249,13 @@ function PortfolioCard({
         <p className="text-muted-foreground text-sm line-clamp-2">
           {entry.description}
         </p>
-        {entry.embedUrl && (
+        {hasVideo && (
+          <div className="mt-3 flex items-center gap-1.5 text-gold text-xs font-medium">
+            <Film className="w-3.5 h-3.5" />
+            <span>Video Tribute</span>
+          </div>
+        )}
+        {!hasVideo && hasEmbed && (
           <div className="mt-3 flex items-center gap-1.5 text-gold text-xs font-medium">
             <Play className="w-3.5 h-3.5" />
             <span>Watch Tribute</span>
@@ -195,10 +329,26 @@ function PricingCard({
         className={`relative w-full h-40 bg-gradient-to-br ${thumb.gradient} flex flex-col items-center justify-center gap-2 overflow-hidden`}
       >
         {pkg.thumbnailBlobId ? (
-          <img
-            src={pkg.thumbnailBlobId}
+          <BlobImage
+            blobId={pkg.thumbnailBlobId}
             alt={pkg.name}
             className="absolute inset-0 w-full h-full object-cover"
+            fallback={
+              thumb.image ? (
+                <img
+                  src={thumb.image}
+                  alt={thumb.label}
+                  className="absolute inset-0 w-full h-full object-cover opacity-80"
+                />
+              ) : (
+                <>
+                  <div className="text-5xl">{thumb.icon}</div>
+                  <p className="text-gold/60 text-xs font-semibold uppercase tracking-widest">
+                    {thumb.label}
+                  </p>
+                </>
+              )
+            }
           />
         ) : thumb.image ? (
           <img

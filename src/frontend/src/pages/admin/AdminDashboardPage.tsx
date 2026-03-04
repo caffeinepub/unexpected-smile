@@ -86,6 +86,7 @@ import {
 } from "../../backend.d";
 import { useAuth } from "../../hooks/useAuth";
 import { useBlobStorage } from "../../hooks/useBlobStorage";
+import { useInternetIdentity } from "../../hooks/useInternetIdentity";
 import {
   useCreatePackage,
   useCreatePortfolioEntry,
@@ -102,6 +103,49 @@ import {
   useUpdatePackage,
   useUpdatePortfolioEntry,
 } from "../../hooks/useQueries";
+
+// ─── BlobImage ─────────────────────────────────────────────────────────────────
+// Resolves a blob hash to a working URL via getBlobURL.
+
+function AdminBlobImage({
+  blobId,
+  alt,
+  className,
+}: {
+  blobId: string;
+  alt: string;
+  className?: string;
+}) {
+  const { getBlobURL } = useBlobStorage();
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getBlobURL(blobId).then((resolved) => {
+      if (!cancelled) setUrl(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [blobId, getBlobURL]);
+
+  if (!url) {
+    return (
+      <div
+        className={`bg-muted/40 flex items-center justify-center ${className ?? "w-full h-full"}`}
+      >
+        <Film className="w-6 h-6 text-muted-foreground/30" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={alt}
+      className={className ?? "w-full h-full object-cover"}
+    />
+  );
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -176,6 +220,7 @@ function PortfolioEntrySheet({
     useUpdatePortfolioEntry();
 
   const thumbnailRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState<PortfolioFormState>({
     title: "",
@@ -184,6 +229,8 @@ function PortfolioEntrySheet({
     isPublished: true,
   });
   const [thumbnailId, setThumbnailId] = useState<string | undefined>(undefined);
+  const [videoBlobId, setVideoBlobId] = useState<string | undefined>(undefined);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
 
   // Reset form when sheet opens/closes or editEntry changes
   useEffect(() => {
@@ -195,6 +242,7 @@ function PortfolioEntrySheet({
         isPublished: editEntry.isPublished,
       });
       setThumbnailId(editEntry.thumbnailBlobId);
+      setVideoBlobId(editEntry.videoBlobId);
     } else {
       setForm({
         title: "",
@@ -203,7 +251,9 @@ function PortfolioEntrySheet({
         isPublished: true,
       });
       setThumbnailId(undefined);
+      setVideoBlobId(undefined);
     }
+    setUploadingVideo(false);
   }, [editEntry]);
 
   const handleThumbnailUpload = async (
@@ -220,6 +270,31 @@ function PortfolioEntrySheet({
     }
   };
 
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (
+      !file.type.includes("mp4") &&
+      !file.name.toLowerCase().endsWith(".mp4")
+    ) {
+      toast.error("Only MP4 files are supported");
+      return;
+    }
+    setUploadingVideo(true);
+    try {
+      // Use uploadBlob — progress tracked via shared uploading/progress state
+      const hash = await uploadBlob(file);
+      if (hash) {
+        setVideoBlobId(hash);
+        toast.success("Video uploaded!");
+      } else {
+        toast.error("Video upload failed");
+      }
+    } finally {
+      setUploadingVideo(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!form.title.trim()) {
       toast.error("Title is required");
@@ -233,6 +308,7 @@ function PortfolioEntrySheet({
       // Auto-assign sortOrder: keep existing or set as next in list
       sortOrder: editEntry ? editEntry.sortOrder : BigInt(currentCount + 1),
       thumbnailBlobId: thumbnailId,
+      videoBlobId: videoBlobId,
     };
     try {
       if (editEntry) {
@@ -249,6 +325,7 @@ function PortfolioEntrySheet({
   };
 
   const isSaving = isCreating || isUpdating;
+  const isUploading = uploading || uploadingVideo;
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
@@ -294,22 +371,106 @@ function PortfolioEntrySheet({
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-foreground">
-                Embed URL (YouTube / Instagram)
-              </Label>
-              <Input
-                data-ocid="admin.entry_embed_url_input"
-                value={form.embedUrl}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, embedUrl: e.target.value }))
-                }
-                placeholder="https://www.youtube.com/embed/..."
-                className="bg-input border-border focus:border-gold"
-              />
-              <p className="text-xs text-muted-foreground">
-                Use the embed URL (not share URL) for YouTube/Instagram.
+            {/* Video Section: MP4 Upload OR Embed URL */}
+            <div className="space-y-3 border border-border/60 rounded-xl p-4 bg-muted/10">
+              <p className="text-sm font-semibold text-foreground">
+                Video Source{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  (choose one)
+                </span>
               </p>
+
+              {/* Direct MP4 Upload */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <Film className="w-3.5 h-3.5 text-gold" />
+                  Direct MP4 Upload
+                </Label>
+                <button
+                  type="button"
+                  className="w-full border border-dashed border-border rounded-xl p-4 text-center cursor-pointer hover:border-gold/40 transition-colors"
+                  onClick={() => videoRef.current?.click()}
+                  data-ocid="admin.video_dropzone"
+                >
+                  {videoBlobId ? (
+                    <div className="flex items-center justify-center gap-2 text-green-400">
+                      <Check className="w-4 h-4" />
+                      <span className="text-sm font-medium">
+                        MP4 video uploaded
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground">
+                      <Upload className="w-7 h-7 mx-auto mb-2 opacity-40" />
+                      <p className="text-sm">Click to upload MP4 video</p>
+                      <p className="text-xs mt-1 text-muted-foreground/60">
+                        Renders as native HTML5 player on the gallery
+                      </p>
+                    </div>
+                  )}
+                  {uploadingVideo && (
+                    <div className="mt-3">
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gold rounded-full transition-all animate-pulse"
+                          style={{ width: "60%" }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Uploading video...
+                      </p>
+                    </div>
+                  )}
+                </button>
+                <input
+                  ref={videoRef}
+                  type="file"
+                  accept="video/mp4,.mp4"
+                  className="hidden"
+                  data-ocid="admin.video_upload_button"
+                  onChange={handleVideoUpload}
+                />
+                {videoBlobId && (
+                  <button
+                    type="button"
+                    onClick={() => setVideoBlobId(undefined)}
+                    className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    Remove video
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 py-1">
+                <div className="flex-1 h-px bg-border/50" />
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                  or
+                </span>
+                <div className="flex-1 h-px bg-border/50" />
+              </div>
+
+              {/* Embed URL */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <Globe className="w-3.5 h-3.5 text-gold" />
+                  Embed URL (YouTube / Instagram)
+                </Label>
+                <Input
+                  data-ocid="admin.entry_embed_url_input"
+                  value={form.embedUrl}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, embedUrl: e.target.value }))
+                  }
+                  placeholder="https://www.youtube.com/embed/..."
+                  className="bg-input border-border focus:border-gold"
+                  disabled={!!videoBlobId}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {videoBlobId
+                    ? "Remove the uploaded MP4 to use an embed link instead."
+                    : "Use the embed URL (not share URL) for YouTube/Instagram."}
+                </p>
+              </div>
             </div>
 
             <div className="space-y-1.5">
@@ -327,6 +488,11 @@ function PortfolioEntrySheet({
                     <Check className="w-4 h-4" />
                     <span className="text-sm font-medium">
                       Thumbnail uploaded
+                      {videoBlobId && (
+                        <span className="text-xs text-green-300/70 ml-1">
+                          (used as video poster)
+                        </span>
+                      )}
                     </span>
                   </div>
                 ) : (
@@ -334,9 +500,14 @@ function PortfolioEntrySheet({
                     <Upload className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     <p className="text-sm">Click to upload thumbnail</p>
                     <p className="text-xs mt-1">PNG, JPG, WebP</p>
+                    {videoBlobId && (
+                      <p className="text-xs mt-1 text-gold/60">
+                        Recommended: used as poster for the video player
+                      </p>
+                    )}
                   </div>
                 )}
-                {uploading && (
+                {uploading && !uploadingVideo && (
                   <div className="mt-3">
                     <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                       <div
@@ -390,7 +561,7 @@ function PortfolioEntrySheet({
           <Button
             data-ocid="admin.entry_save_button"
             onClick={handleSave}
-            disabled={isSaving || uploading}
+            disabled={isSaving || isUploading}
             className="bg-gold text-primary-foreground hover:bg-gold-light font-semibold"
           >
             {isSaving ? (
@@ -980,6 +1151,22 @@ export default function AdminDashboardPage() {
   const { logout, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
 
+  // Internet Identity — needed to authorize backend admin calls via _initializeAccessControlWithSecret
+  const {
+    identity,
+    login: iiLogin,
+    isInitializing: iiInitializing,
+    isLoggingIn,
+    loginStatus,
+    loginError,
+  } = useInternetIdentity();
+
+  // "User is already authenticated" means AuthClient already has a valid identity —
+  // treat it as a non-fatal error (the identity is already stored in AuthClient).
+  const isAlreadyAuthError =
+    loginStatus === "loginError" &&
+    loginError?.message === "User is already authenticated";
+
   const { data: packages } = useGetPackages();
 
   const [activeTab, setActiveTab] = useState("orders");
@@ -1016,12 +1203,37 @@ export default function AdminDashboardPage() {
     useReorderPortfolioEntry();
   const { mutateAsync: deletePkg } = useDeletePackage();
 
-  // Redirect if not authenticated
+  // Redirect if not authenticated via local session
   useEffect(() => {
     if (!isAuthenticated) {
       navigate({ to: "/admin/login" });
     }
   }, [isAuthenticated, navigate]);
+
+  // When admin is authenticated via localStorage but II identity is not yet present,
+  // automatically trigger II login so useActor can call _initializeAccessControlWithSecret
+  // and authorize backend admin operations (create/update/delete portfolio, packages, etc.).
+  // Include "loginError" state so that if the user dismisses and the page re-renders (e.g.
+  // returns from another tab) we don't re-trigger unnecessarily — only trigger on "idle".
+  // "isAlreadyAuthError" is handled separately below (identity is actually already available).
+  useEffect(() => {
+    if (
+      isAuthenticated &&
+      !iiInitializing &&
+      !identity &&
+      !isLoggingIn &&
+      loginStatus === "idle"
+    ) {
+      iiLogin();
+    }
+  }, [
+    isAuthenticated,
+    iiInitializing,
+    identity,
+    isLoggingIn,
+    loginStatus,
+    iiLogin,
+  ]);
 
   // Seed portfolio on first load if empty
   useEffect(() => {
@@ -1105,6 +1317,80 @@ export default function AdminDashboardPage() {
   const sortedPackages = allPackages
     ? [...allPackages].sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder))
     : [];
+
+  // Show a connecting screen while Internet Identity is being established.
+  // Without an II identity, the actor runs anonymously and backend admin calls
+  // will fail with "Unauthorized: Only admins can create portfolio entries".
+  // Exception: "User is already authenticated" loginError means AuthClient already
+  // has a valid identity — treat it as non-blocking (spinner resolves naturally).
+  if (
+    isAuthenticated &&
+    (iiInitializing ||
+      isLoggingIn ||
+      (!identity && loginStatus !== "loginError") ||
+      (!identity && loginStatus === "loginError" && isAlreadyAuthError))
+  ) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center mx-auto">
+            <Loader2 className="w-8 h-8 text-gold animate-spin" />
+          </div>
+          <div>
+            <p className="font-display font-semibold text-foreground text-lg">
+              Connecting to Dashboard
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {isLoggingIn
+                ? "Completing secure authorization — please complete the popup…"
+                : "Initializing secure session…"}
+            </p>
+          </div>
+          {isLoggingIn && (
+            <p className="text-xs text-muted-foreground/60 max-w-xs mx-auto">
+              A browser popup has opened. Complete the Internet Identity step to
+              authorize admin operations.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // If II login errored (e.g. popup dismissed) and we still have no identity,
+  // show a retry button. "User is already authenticated" errors are excluded
+  // because the AuthClient identity is still valid in that case.
+  if (
+    isAuthenticated &&
+    loginStatus === "loginError" &&
+    !identity &&
+    !isAlreadyAuthError
+  ) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 border border-destructive/20 flex items-center justify-center mx-auto">
+            <X className="w-8 h-8 text-destructive" />
+          </div>
+          <div>
+            <p className="font-display font-semibold text-foreground text-lg">
+              Authorization Required
+            </p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-xs mx-auto">
+              The secure authorization step is needed to perform admin
+              operations like managing portfolio entries and bookings.
+            </p>
+          </div>
+          <Button
+            onClick={iiLogin}
+            className="bg-gold text-primary-foreground hover:bg-gold-light font-semibold"
+          >
+            Retry Authorization
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -1587,8 +1873,8 @@ export default function AdminDashboardPage() {
                       {/* Thumbnail */}
                       <div className="aspect-video bg-muted relative">
                         {entry.thumbnailBlobId ? (
-                          <img
-                            src={entry.thumbnailBlobId}
+                          <AdminBlobImage
+                            blobId={entry.thumbnailBlobId}
                             alt={entry.title}
                             className="w-full h-full object-cover"
                           />
@@ -1616,7 +1902,13 @@ export default function AdminDashboardPage() {
                             {entry.description}
                           </p>
                         )}
-                        {entry.embedUrl && (
+                        {entry.videoBlobId && (
+                          <p className="text-xs text-blue-400/70 mt-1 flex items-center gap-1">
+                            <Film className="w-3 h-3" />
+                            Direct MP4 uploaded
+                          </p>
+                        )}
+                        {!entry.videoBlobId && entry.embedUrl && (
                           <p className="text-xs text-gold/60 mt-1 line-clamp-1">
                             {entry.embedUrl}
                           </p>
@@ -1715,8 +2007,8 @@ export default function AdminDashboardPage() {
                       {/* Thumbnail */}
                       <div className="relative w-full h-36 bg-gradient-to-br from-[oklch(0.18_0.03_60)] via-[oklch(0.22_0.06_70)] to-[oklch(0.16_0.02_50)] overflow-hidden">
                         {pkg.thumbnailBlobId ? (
-                          <img
-                            src={pkg.thumbnailBlobId}
+                          <AdminBlobImage
+                            blobId={pkg.thumbnailBlobId}
                             alt={pkg.name}
                             className="w-full h-full object-cover"
                           />
