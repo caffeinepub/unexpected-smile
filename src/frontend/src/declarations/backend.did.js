@@ -36,6 +36,18 @@ export const BookingInput = IDL.Record({
   'packageId' : PackageId,
 });
 export const BookingId = IDL.Nat;
+export const PackageInput = IDL.Record({
+  'videoOnlyPrice' : IDL.Nat,
+  'tagline' : IDL.Opt(IDL.Text),
+  'thumbnailBlobId' : IDL.Opt(IDL.Text),
+  'sortOrder' : IDL.Nat,
+  'durationDescription' : IDL.Text,
+  'name' : IDL.Text,
+  'memberDetails' : IDL.Text,
+  'isHidden' : IDL.Bool,
+  'isBestSeller' : IDL.Bool,
+  'voiceAddonPrice' : IDL.Nat,
+});
 export const PortfolioEntryInput = IDL.Record({
   'title' : IDL.Text,
   'videoBlobId' : IDL.Opt(IDL.Text),
@@ -53,6 +65,19 @@ export const ClientMessage = IDL.Record({
   'createdAt' : IDL.Int,
   'messageText' : IDL.Text,
   'senderName' : IDL.Text,
+});
+export const Package = IDL.Record({
+  'id' : PackageId,
+  'videoOnlyPrice' : IDL.Nat,
+  'tagline' : IDL.Opt(IDL.Text),
+  'thumbnailBlobId' : IDL.Opt(IDL.Text),
+  'sortOrder' : IDL.Nat,
+  'durationDescription' : IDL.Text,
+  'name' : IDL.Text,
+  'memberDetails' : IDL.Text,
+  'isHidden' : IDL.Bool,
+  'isBestSeller' : IDL.Bool,
+  'voiceAddonPrice' : IDL.Nat,
 });
 export const PortfolioEntry = IDL.Record({
   'id' : PortfolioEntryId,
@@ -86,15 +111,9 @@ export const Booking = IDL.Record({
   'packageId' : PackageId,
 });
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
-export const Package = IDL.Record({
-  'id' : PackageId,
-  'videoOnlyPrice' : IDL.Nat,
-  'tagline' : IDL.Opt(IDL.Text),
-  'durationDescription' : IDL.Text,
-  'name' : IDL.Text,
-  'memberDetails' : IDL.Text,
-  'isBestSeller' : IDL.Bool,
-  'voiceAddonPrice' : IDL.Nat,
+export const ReorderDirection = IDL.Variant({
+  'up' : IDL.Null,
+  'down' : IDL.Null,
 });
 
 export const idlService = IDL.Service({
@@ -127,13 +146,16 @@ export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'createBooking' : IDL.Func([BookingInput], [BookingId], []),
+  'createPackage' : IDL.Func([PackageInput], [PackageId], []),
   'createPortfolioEntry' : IDL.Func(
       [PortfolioEntryInput],
       [PortfolioEntryId],
       [],
     ),
+  'deletePackage' : IDL.Func([PackageId], [], []),
   'deletePortfolioEntry' : IDL.Func([PortfolioEntryId], [], []),
   'getAllClientMessages' : IDL.Func([], [IDL.Vec(ClientMessage)], ['query']),
+  'getAllPackages' : IDL.Func([], [IDL.Vec(Package)], []),
   'getAllPortfolioEntries' : IDL.Func([], [IDL.Vec(PortfolioEntry)], ['query']),
   'getBookingById' : IDL.Func([BookingId], [IDL.Opt(Booking)], ['query']),
   'getBookings' : IDL.Func(
@@ -148,7 +170,7 @@ export const idlService = IDL.Service({
       [IDL.Vec(ClientMessage)],
       ['query'],
     ),
-  'getPackages' : IDL.Func([], [IDL.Vec(Package)], ['query']),
+  'getPackages' : IDL.Func([], [IDL.Vec(Package)], []),
   'getPublishedPortfolioEntries' : IDL.Func(
       [],
       [IDL.Vec(PortfolioEntry)],
@@ -160,8 +182,12 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'reorderPortfolioEntry' : IDL.Func(
+      [PortfolioEntryId, ReorderDirection],
+      [],
+      [],
+    ),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-  'seedPortfolioEntries' : IDL.Func([], [], []),
   'sendClientMessage' : IDL.Func(
       [BookingId, IDL.Text, IDL.Text],
       [ClientMessageId],
@@ -172,6 +198,7 @@ export const idlService = IDL.Service({
       [],
       [],
     ),
+  'updatePackage' : IDL.Func([PackageId, PackageInput], [], []),
   'updatePortfolioEntry' : IDL.Func(
       [PortfolioEntryId, PortfolioEntryInput],
       [],
@@ -213,6 +240,18 @@ export const idlFactory = ({ IDL }) => {
     'packageId' : PackageId,
   });
   const BookingId = IDL.Nat;
+  const PackageInput = IDL.Record({
+    'videoOnlyPrice' : IDL.Nat,
+    'tagline' : IDL.Opt(IDL.Text),
+    'thumbnailBlobId' : IDL.Opt(IDL.Text),
+    'sortOrder' : IDL.Nat,
+    'durationDescription' : IDL.Text,
+    'name' : IDL.Text,
+    'memberDetails' : IDL.Text,
+    'isHidden' : IDL.Bool,
+    'isBestSeller' : IDL.Bool,
+    'voiceAddonPrice' : IDL.Nat,
+  });
   const PortfolioEntryInput = IDL.Record({
     'title' : IDL.Text,
     'videoBlobId' : IDL.Opt(IDL.Text),
@@ -230,6 +269,19 @@ export const idlFactory = ({ IDL }) => {
     'createdAt' : IDL.Int,
     'messageText' : IDL.Text,
     'senderName' : IDL.Text,
+  });
+  const Package = IDL.Record({
+    'id' : PackageId,
+    'videoOnlyPrice' : IDL.Nat,
+    'tagline' : IDL.Opt(IDL.Text),
+    'thumbnailBlobId' : IDL.Opt(IDL.Text),
+    'sortOrder' : IDL.Nat,
+    'durationDescription' : IDL.Text,
+    'name' : IDL.Text,
+    'memberDetails' : IDL.Text,
+    'isHidden' : IDL.Bool,
+    'isBestSeller' : IDL.Bool,
+    'voiceAddonPrice' : IDL.Nat,
   });
   const PortfolioEntry = IDL.Record({
     'id' : PortfolioEntryId,
@@ -266,16 +318,7 @@ export const idlFactory = ({ IDL }) => {
     'packageId' : PackageId,
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
-  const Package = IDL.Record({
-    'id' : PackageId,
-    'videoOnlyPrice' : IDL.Nat,
-    'tagline' : IDL.Opt(IDL.Text),
-    'durationDescription' : IDL.Text,
-    'name' : IDL.Text,
-    'memberDetails' : IDL.Text,
-    'isBestSeller' : IDL.Bool,
-    'voiceAddonPrice' : IDL.Nat,
-  });
+  const ReorderDirection = IDL.Variant({ 'up' : IDL.Null, 'down' : IDL.Null });
   
   return IDL.Service({
     '_caffeineStorageBlobIsLive' : IDL.Func(
@@ -307,13 +350,16 @@ export const idlFactory = ({ IDL }) => {
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'createBooking' : IDL.Func([BookingInput], [BookingId], []),
+    'createPackage' : IDL.Func([PackageInput], [PackageId], []),
     'createPortfolioEntry' : IDL.Func(
         [PortfolioEntryInput],
         [PortfolioEntryId],
         [],
       ),
+    'deletePackage' : IDL.Func([PackageId], [], []),
     'deletePortfolioEntry' : IDL.Func([PortfolioEntryId], [], []),
     'getAllClientMessages' : IDL.Func([], [IDL.Vec(ClientMessage)], ['query']),
+    'getAllPackages' : IDL.Func([], [IDL.Vec(Package)], []),
     'getAllPortfolioEntries' : IDL.Func(
         [],
         [IDL.Vec(PortfolioEntry)],
@@ -332,7 +378,7 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(ClientMessage)],
         ['query'],
       ),
-    'getPackages' : IDL.Func([], [IDL.Vec(Package)], ['query']),
+    'getPackages' : IDL.Func([], [IDL.Vec(Package)], []),
     'getPublishedPortfolioEntries' : IDL.Func(
         [],
         [IDL.Vec(PortfolioEntry)],
@@ -344,8 +390,12 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'reorderPortfolioEntry' : IDL.Func(
+        [PortfolioEntryId, ReorderDirection],
+        [],
+        [],
+      ),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-    'seedPortfolioEntries' : IDL.Func([], [], []),
     'sendClientMessage' : IDL.Func(
         [BookingId, IDL.Text, IDL.Text],
         [ClientMessageId],
@@ -356,6 +406,7 @@ export const idlFactory = ({ IDL }) => {
         [],
         [],
       ),
+    'updatePackage' : IDL.Func([PackageId, PackageInput], [], []),
     'updatePortfolioEntry' : IDL.Func(
         [PortfolioEntryId, PortfolioEntryInput],
         [],

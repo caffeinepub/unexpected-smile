@@ -1,17 +1,20 @@
 import Array "mo:core/Array";
 import Int "mo:core/Int";
 import Map "mo:core/Map";
-import Text "mo:core/Text";
-import Order "mo:core/Order";
 import Time "mo:core/Time";
+import Text "mo:core/Text";
 import Nat "mo:core/Nat";
+import Order "mo:core/Order";
 import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
 import VarArray "mo:core/VarArray";
 import MixinStorage "blob-storage/Mixin";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
+import Migration "migration";
+import Iter "mo:core/Iter";
 
+(with migration = Migration.run)
 actor {
   // Initialize the access control system
   let accessControlState = AccessControl.initState();
@@ -96,6 +99,22 @@ actor {
     voiceAddonPrice : Nat;
     isBestSeller : Bool;
     memberDetails : Text;
+    thumbnailBlobId : ?Text;
+    isHidden : Bool;
+    sortOrder : Nat;
+  };
+
+  public type PackageInput = {
+    name : Text;
+    tagline : ?Text;
+    durationDescription : Text;
+    videoOnlyPrice : Nat;
+    voiceAddonPrice : Nat;
+    isBestSeller : Bool;
+    memberDetails : Text;
+    thumbnailBlobId : ?Text;
+    isHidden : Bool;
+    sortOrder : Nat;
   };
 
   public type ClientMessage = {
@@ -110,6 +129,8 @@ actor {
     name : Text;
   };
 
+  public type ReorderDirection = { #up; #down };
+
   module PortfolioEntry {
     public func compareBySortOrderAndCreatedAt(a : PortfolioEntry, b : PortfolioEntry) : Order.Order {
       switch (Nat.compare(a.sortOrder, b.sortOrder)) {
@@ -119,50 +140,25 @@ actor {
     };
   };
 
-  // Constants
-  let packages : [Package] = [
-    {
-      id = 1 : Nat;
-      name = "Basic Tribute Package";
-      tagline = ?"Perfect for Single Person Tributes";
-      durationDescription = "1 Minute video. Late person + 1-2 family members";
-      videoOnlyPrice = 1000;
-      voiceAddonPrice = 1500;
-      isBestSeller = false;
-      memberDetails = "1 Minute video. Late person + 1-2 family members.";
-    },
-    {
-      id = 2 : Nat;
-      name = "Family Special Package";
-      tagline = ?"Most Popular Family Choice";
-      durationDescription = "1:30 Minute video. Late person + up to 4 family members.";
-      videoOnlyPrice = 2000;
-      voiceAddonPrice = 2500;
-      isBestSeller = true;
-      memberDetails = "1:30 Minute video. Late person + up to 4 family members.";
-    },
-    {
-      id = 3 : Nat;
-      name = "Grand Cinematic Package";
-      tagline = ?"Ultimate Cinematic Experience";
-      durationDescription = "2 Minute cinematic emotional video.";
-      videoOnlyPrice = 3000;
-      voiceAddonPrice = 3500;
-      isBestSeller = false;
-      memberDetails = "2 Minute cinematic emotional video.";
-    },
-  ];
+  module Package {
+    public func compareBySortOrder(a : Package, b : Package) : Order.Order {
+      Nat.compare(a.sortOrder, b.sortOrder);
+    };
+  };
 
   // State
   var nextBookingId = 1;
   var nextPortfolioEntryId = 1;
+  var nextPackageId = 4; // Tracks id for new packages
   var nextClientMessageId = 1;
-  var seedCount = 0; // Track number of seeded entries
+  var seedCount = 0;
+  var packagesSeeded = false;
 
   let bookings = Map.empty<BookingId, Booking>();
   let portfolioEntries = Map.empty<PortfolioEntryId, PortfolioEntry>();
   let clientMessages = Map.empty<ClientMessageId, ClientMessage>();
   let userProfiles = Map.empty<Principal, UserProfile>();
+  let packagesMap = Map.empty<PackageId, Package>();
 
   // User Profile Management
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
@@ -186,69 +182,143 @@ actor {
     userProfiles.add(caller, profile);
   };
 
-  // Seeds sample portfolio entries (Admin only)
-  public shared ({ caller }) func seedPortfolioEntries() : async () {
+  // Packages Seeding
+  func seedPackagesIfNeeded() {
+    if (not packagesSeeded) {
+      let initialPackages : [Package] = [
+        {
+          id = 1 : Nat;
+          name = "Basic Tribute Package";
+          tagline = ?"Perfect for Single Person Tributes";
+          durationDescription = "1 Minute video. Late person + 1-2 family members";
+          videoOnlyPrice = 1000;
+          voiceAddonPrice = 1500;
+          isBestSeller = false;
+          memberDetails = "1 Minute video. Late person + 1-2 family members.";
+          thumbnailBlobId = null;
+          isHidden = false;
+          sortOrder = 1;
+        },
+        {
+          id = 2 : Nat;
+          name = "Family Special Package";
+          tagline = ?"Most Popular Family Choice";
+          durationDescription = "1:30 Minute video. Late person + up to 4 family members.";
+          videoOnlyPrice = 2000;
+          voiceAddonPrice = 2500;
+          isBestSeller = true;
+          memberDetails = "1:30 Minute video. Late person + up to 4 family members.";
+          thumbnailBlobId = null;
+          isHidden = false;
+          sortOrder = 2;
+        },
+        {
+          id = 3 : Nat;
+          name = "Grand Cinematic Package";
+          tagline = ?"Ultimate Cinematic Experience";
+          durationDescription = "2 Minute cinematic emotional video.";
+          videoOnlyPrice = 3000;
+          voiceAddonPrice = 3500;
+          isBestSeller = false;
+          memberDetails = "2 Minute cinematic emotional video.";
+          thumbnailBlobId = null;
+          isHidden = false;
+          sortOrder = 3;
+        },
+      ];
+
+      for (pkg in initialPackages.values()) {
+        packagesMap.add(pkg.id, pkg);
+      };
+
+      packagesSeeded := true;
+    };
+  };
+
+  // Get Packages (non-hidden, sorted) - PUBLIC, must be shared to allow seeding
+  public shared ({ caller }) func getPackages() : async [Package] {
+    seedPackagesIfNeeded();
+
+    let visibleEntries = packagesMap.values().toArray().filter(
+      func(pkg) { not pkg.isHidden }
+    );
+
+    visibleEntries.sort(Package.compareBySortOrder);
+  };
+
+  // Get All Packages (including hidden) - ADMIN ONLY
+  public shared ({ caller }) func getAllPackages() : async [Package] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can seed portfolio entries");
+      Runtime.trap("Unauthorized: Only admins can view all packages");
     };
 
-    if (seedCount < 3) {
-      // Entry 1
-      let entry1 : PortfolioEntry = {
-        id = nextPortfolioEntryId;
-        title = "Legacy Tribute - Dr. Sunder Lal";
-        description = "A beautiful tribute video celebrating the life of Dr. Sunder Lal. Features childhood photos, special achievements, and messages from family. HD quality production by Unexpected Smile's creative team.";
-        thumbnailBlobId = null;
-        videoBlobId = null;
-        embedUrl = ?"https://hiasdad.com/embed/039111019";
-        isPublished = true;
-        sortOrder = 1;
-        createdAt = Time.now();
-      };
+    seedPackagesIfNeeded();
 
-      // Entry 2
-      let entry2 : PortfolioEntry = {
-        id = nextPortfolioEntryId + 1;
-        title = "Family Memorial - The Gupta Family";
-        description = "A heartfelt memorial video for a beloved family member, encapsulating joyous moments and achievements. Enhanced by professional editing and voice-overs by the Unexpected Smile team.";
-        thumbnailBlobId = null;
-        videoBlobId = null;
-        embedUrl = ?"https://vimeo.com/1407722228";
-        isPublished = true;
-        sortOrder = 2;
-        createdAt = Time.now();
-      };
+    packagesMap.values().toArray().sort(Package.compareBySortOrder);
+  };
 
-      // Entry 3
-      let entry3 : PortfolioEntry = {
-        id = nextPortfolioEntryId + 2;
-        title = "Celebration of Life – Rajesh Kumar";
-        description = "A touching video crafted to honor the vibrant life of Rajesh Kumar, featuring advanced editing techniques and a soothing voice-over curated by Unexpected Smile experts.";
-        thumbnailBlobId = null;
-        videoBlobId = null;
-        embedUrl = ?"https://www.respecttest.com/13370130";
-        isPublished = true;
-        sortOrder = 3;
-        createdAt = Time.now();
-      };
-
-      // Store entries
-      portfolioEntries.add(entry1.id, entry1);
-      portfolioEntries.add(entry2.id, entry2);
-      portfolioEntries.add(entry3.id, entry3);
-
-      nextPortfolioEntryId += 3;
-      seedCount += 3; // Increment seed count
+  // Create Package - ADMIN ONLY
+  public shared ({ caller }) func createPackage(input : PackageInput) : async PackageId {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can create packages");
     };
+
+    let newPackage : Package = {
+      id = nextPackageId;
+      name = input.name;
+      tagline = input.tagline;
+      durationDescription = input.durationDescription;
+      videoOnlyPrice = input.videoOnlyPrice;
+      voiceAddonPrice = input.voiceAddonPrice;
+      isBestSeller = input.isBestSeller;
+      memberDetails = input.memberDetails;
+      thumbnailBlobId = input.thumbnailBlobId;
+      isHidden = input.isHidden;
+      sortOrder = input.sortOrder;
+    };
+
+    packagesMap.add(nextPackageId, newPackage);
+    nextPackageId += 1;
+    newPackage.id;
   };
 
-  // Packages (Public - anyone can view)
-  public query ({ caller }) func getPackages() : async [Package] {
-    packages;
+  // Update Package - ADMIN ONLY
+  public shared ({ caller }) func updatePackage(id : PackageId, input : PackageInput) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can update packages");
+    };
+
+    let updatedPackage : Package = switch (packagesMap.get(id)) {
+      case (null) { Runtime.trap("Package not found") };
+      case (?existingPackage) {
+        {
+          id = existingPackage.id;
+          name = input.name;
+          tagline = input.tagline;
+          durationDescription = input.durationDescription;
+          videoOnlyPrice = input.videoOnlyPrice;
+          voiceAddonPrice = input.voiceAddonPrice;
+          isBestSeller = input.isBestSeller;
+          memberDetails = input.memberDetails;
+          thumbnailBlobId = input.thumbnailBlobId;
+          isHidden = input.isHidden;
+          sortOrder = input.sortOrder;
+        };
+      };
+    };
+    packagesMap.add(id, updatedPackage);
   };
 
-  // Bookings
-  // Anyone can create a booking (guests included)
+  // Delete Package - ADMIN ONLY
+  public shared ({ caller }) func deletePackage(id : PackageId) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can delete packages");
+    };
+
+    packagesMap.remove(id);
+  };
+
+  // Bookings - PUBLIC (with validation)
   public shared ({ caller }) func createBooking(input : BookingInput) : async BookingId {
     if (input.utrNumber.size() != 12) {
       Runtime.trap("UTR number must be exactly 12 digits");
@@ -331,24 +401,23 @@ actor {
     bookings.add(id, updatedBooking);
   };
 
-  // Portfolio Entries
-  // Admin only - view all portfolio entries
+  // Portfolio Entries - ADMIN ONLY
   public query ({ caller }) func getAllPortfolioEntries() : async [PortfolioEntry] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can view all portfolio entries");
     };
 
-    portfolioEntries.values().toArray();
+    portfolioEntries.values().toArray().sort(PortfolioEntry.compareBySortOrderAndCreatedAt);
   };
 
-  // Public - anyone can view published portfolio entries
+  // PUBLIC - only published entries
   public query ({ caller }) func getPublishedPortfolioEntries() : async [PortfolioEntry] {
     portfolioEntries.values().toArray().filter(
       func(entry) { entry.isPublished }
     ).sort(PortfolioEntry.compareBySortOrderAndCreatedAt);
   };
 
-  // Admin only - create portfolio entry
+  // ADMIN ONLY
   public shared ({ caller }) func createPortfolioEntry(input : PortfolioEntryInput) : async PortfolioEntryId {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can create portfolio entries");
@@ -371,7 +440,7 @@ actor {
     newEntry.id;
   };
 
-  // Admin only - update portfolio entry
+  // ADMIN ONLY
   public shared ({ caller }) func updatePortfolioEntry(id : PortfolioEntryId, input : PortfolioEntryInput) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can update portfolio entries");
@@ -396,7 +465,7 @@ actor {
     portfolioEntries.add(id, updatedEntry);
   };
 
-  // Admin only - delete portfolio entry
+  // ADMIN ONLY
   public shared ({ caller }) func deletePortfolioEntry(id : PortfolioEntryId) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can delete portfolio entries");
@@ -405,10 +474,52 @@ actor {
     portfolioEntries.remove(id);
   };
 
-  // Client Messages
-  // Anyone can send a message (guests included)
+  // ADMIN ONLY
+  public shared ({ caller }) func reorderPortfolioEntry(id : PortfolioEntryId, direction : ReorderDirection) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can reorder portfolio entries");
+    };
+
+    let sortedEntries = portfolioEntries.values().toArray().sort(
+      PortfolioEntry.compareBySortOrderAndCreatedAt
+    );
+
+    let entryIndex = switch (sortedEntries.findIndex(func(e) { e.id == id })) {
+      case (null) { Runtime.trap("Entry not found") };
+      case (?idx) { idx };
+    };
+
+    let targetIndex = switch (direction) {
+      case (#up) { if (entryIndex == 0) { 0 } else { entryIndex - 1 } };
+      case (#down) { if (entryIndex >= (sortedEntries.size() - 1)) { sortedEntries.size() - 1 } else { entryIndex + 1 } };
+    };
+
+    if (entryIndex != targetIndex) {
+      let mutableEntries : [var PortfolioEntry] = sortedEntries.toVarArray();
+      let temp = mutableEntries[entryIndex];
+      mutableEntries[entryIndex] := mutableEntries[targetIndex];
+      mutableEntries[targetIndex] := temp;
+
+      for (i in Nat.range(0, mutableEntries.size())) {
+        let entry = mutableEntries[i];
+        let updatedEntry : PortfolioEntry = {
+          id = entry.id;
+          title = entry.title;
+          description = entry.description;
+          thumbnailBlobId = entry.thumbnailBlobId;
+          videoBlobId = entry.videoBlobId;
+          embedUrl = entry.embedUrl;
+          isPublished = entry.isPublished;
+          sortOrder = i + 1;
+          createdAt = entry.createdAt;
+        };
+        portfolioEntries.add(entry.id, updatedEntry);
+      };
+    };
+  };
+
+  // Client Messages - PUBLIC (with validation)
   public shared ({ caller }) func sendClientMessage(bookingId : BookingId, senderName : Text, messageText : Text) : async ClientMessageId {
-    // Validate booking exists
     if (not bookings.containsKey(bookingId)) {
       Runtime.trap("Booking does not exist");
     };
@@ -430,7 +541,7 @@ actor {
     message.id;
   };
 
-  // Anyone can view messages for a specific booking (guests included)
+  // PUBLIC - filter by bookingId
   public query ({ caller }) func getClientMessages(bookingId : BookingId) : async [ClientMessage] {
     clientMessages.values().toArray().filter(
       func(message) {
@@ -439,7 +550,7 @@ actor {
     );
   };
 
-  // Admin only - view all client messages (admin dashboard)
+  // ADMIN ONLY
   public query ({ caller }) func getAllClientMessages() : async [ClientMessage] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can view all client messages");

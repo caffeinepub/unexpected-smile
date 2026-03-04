@@ -45,6 +45,8 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Eye,
   EyeOff,
@@ -56,6 +58,7 @@ import {
   Loader2,
   LogOut,
   MessageCircle,
+  Package,
   Pencil,
   Plus,
   RefreshCw,
@@ -70,24 +73,33 @@ import { toast } from "sonner";
 import type {
   Booking,
   ClientMessage,
+  PackageId,
+  PackageInput,
+  Package as PackageType,
   PortfolioEntry,
   PortfolioEntryInput,
 } from "../../backend.d";
 import {
   BookingStatus,
+  ReorderDirection,
   Variant_videoOnly_videoAndVoice,
 } from "../../backend.d";
 import { useAuth } from "../../hooks/useAuth";
 import { useBlobStorage } from "../../hooks/useBlobStorage";
 import {
+  useCreatePackage,
   useCreatePortfolioEntry,
+  useDeletePackage,
   useDeletePortfolioEntry,
   useGetAllClientMessages,
+  useGetAllPackages,
   useGetAllPortfolioEntries,
   useGetBookings,
   useGetPackages,
+  useReorderPortfolioEntry,
   useSeedPortfolioEntries,
   useUpdateBookingStatus,
+  useUpdatePackage,
   useUpdatePortfolioEntry,
 } from "../../hooks/useQueries";
 
@@ -144,17 +156,18 @@ interface PortfolioFormState {
   description: string;
   embedUrl: string;
   isPublished: boolean;
-  sortOrder: string;
 }
 
 function PortfolioEntrySheet({
   open,
   onClose,
   editEntry,
+  currentCount,
 }: {
   open: boolean;
   onClose: () => void;
   editEntry: PortfolioEntry | null;
+  currentCount: number;
 }) {
   const { uploadBlob, uploading, progress } = useBlobStorage();
   const { mutateAsync: createEntry, isPending: isCreating } =
@@ -169,7 +182,6 @@ function PortfolioEntrySheet({
     description: "",
     embedUrl: "",
     isPublished: true,
-    sortOrder: "0",
   });
   const [thumbnailId, setThumbnailId] = useState<string | undefined>(undefined);
 
@@ -181,7 +193,6 @@ function PortfolioEntrySheet({
         description: editEntry.description,
         embedUrl: editEntry.embedUrl ?? "",
         isPublished: editEntry.isPublished,
-        sortOrder: editEntry.sortOrder.toString(),
       });
       setThumbnailId(editEntry.thumbnailBlobId);
     } else {
@@ -190,7 +201,6 @@ function PortfolioEntrySheet({
         description: "",
         embedUrl: "",
         isPublished: true,
-        sortOrder: "0",
       });
       setThumbnailId(undefined);
     }
@@ -220,7 +230,8 @@ function PortfolioEntrySheet({
       description: form.description.trim(),
       embedUrl: form.embedUrl.trim() || undefined,
       isPublished: form.isPublished,
-      sortOrder: BigInt(Number(form.sortOrder) || 0),
+      // Auto-assign sortOrder: keep existing or set as next in list
+      sortOrder: editEntry ? editEntry.sortOrder : BigInt(currentCount + 1),
       thumbnailBlobId: thumbnailId,
     };
     try {
@@ -349,21 +360,6 @@ function PortfolioEntrySheet({
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-foreground">
-                Sort Order
-              </Label>
-              <Input
-                type="number"
-                value={form.sortOrder}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, sortOrder: e.target.value }))
-                }
-                placeholder="0"
-                className="bg-input border-border focus:border-gold"
-              />
-            </div>
-
             <div className="flex items-center justify-between py-3 border border-border rounded-xl px-4">
               <div>
                 <p className="text-sm font-medium text-foreground">Published</p>
@@ -406,6 +402,388 @@ function PortfolioEntrySheet({
               "Save Changes"
             ) : (
               "Create Entry"
+            )}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ─── Package Form ─────────────────────────────────────────────────────────────
+
+interface PackageFormState {
+  name: string;
+  tagline: string;
+  videoOnlyPrice: string;
+  voiceAddonPrice: string;
+  durationDescription: string;
+  memberDetails: string;
+  isBestSeller: boolean;
+  isHidden: boolean;
+}
+
+function PackageSheet({
+  open,
+  onClose,
+  editPackage,
+  currentCount,
+}: {
+  open: boolean;
+  onClose: () => void;
+  editPackage: PackageType | null;
+  currentCount: number;
+}) {
+  const { uploadBlob, uploading, progress } = useBlobStorage();
+  const { mutateAsync: createPkg, isPending: isCreating } = useCreatePackage();
+  const { mutateAsync: updatePkg, isPending: isUpdating } = useUpdatePackage();
+
+  const thumbnailRef = useRef<HTMLInputElement>(null);
+
+  const [form, setForm] = useState<PackageFormState>({
+    name: "",
+    tagline: "",
+    videoOnlyPrice: "",
+    voiceAddonPrice: "",
+    durationDescription: "",
+    memberDetails: "",
+    isBestSeller: false,
+    isHidden: false,
+  });
+  const [thumbnailId, setThumbnailId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (editPackage) {
+      setForm({
+        name: editPackage.name,
+        tagline: editPackage.tagline ?? "",
+        videoOnlyPrice: Number(editPackage.videoOnlyPrice).toString(),
+        voiceAddonPrice: Number(editPackage.voiceAddonPrice).toString(),
+        durationDescription: editPackage.durationDescription,
+        memberDetails: editPackage.memberDetails,
+        isBestSeller: editPackage.isBestSeller,
+        isHidden: editPackage.isHidden,
+      });
+      setThumbnailId(editPackage.thumbnailBlobId);
+    } else {
+      setForm({
+        name: "",
+        tagline: "",
+        videoOnlyPrice: "",
+        voiceAddonPrice: "",
+        durationDescription: "",
+        memberDetails: "",
+        isBestSeller: false,
+        isHidden: false,
+      });
+      setThumbnailId(undefined);
+    }
+  }, [editPackage]);
+
+  const handleThumbnailUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const hash = await uploadBlob(file);
+    if (hash) {
+      setThumbnailId(hash);
+      toast.success("Thumbnail uploaded!");
+    } else {
+      toast.error("Thumbnail upload failed");
+    }
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) {
+      toast.error("Package name is required");
+      return;
+    }
+    const videoPrice = Number(form.videoOnlyPrice);
+    const voicePrice = Number(form.voiceAddonPrice);
+    if (!form.videoOnlyPrice || Number.isNaN(videoPrice) || videoPrice < 0) {
+      toast.error("Valid Video Only price is required");
+      return;
+    }
+    if (!form.voiceAddonPrice || Number.isNaN(voicePrice) || voicePrice < 0) {
+      toast.error("Valid Voice Addon price is required");
+      return;
+    }
+
+    const input: PackageInput = {
+      name: form.name.trim(),
+      tagline: form.tagline.trim() || undefined,
+      videoOnlyPrice: BigInt(videoPrice),
+      voiceAddonPrice: BigInt(voicePrice),
+      durationDescription: form.durationDescription.trim(),
+      memberDetails: form.memberDetails.trim(),
+      isBestSeller: form.isBestSeller,
+      isHidden: form.isHidden,
+      thumbnailBlobId: thumbnailId,
+      sortOrder: editPackage ? editPackage.sortOrder : BigInt(currentCount + 1),
+    };
+
+    try {
+      if (editPackage) {
+        await updatePkg({ id: editPackage.id, input });
+        toast.success("Package updated!");
+      } else {
+        await createPkg(input);
+        toast.success("Package created!");
+      }
+      onClose();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to save package",
+      );
+    }
+  };
+
+  const isSaving = isCreating || isUpdating;
+
+  return (
+    <Sheet open={open} onOpenChange={onClose}>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-xl bg-card border-border"
+      >
+        <SheetHeader className="mb-6">
+          <SheetTitle className="font-display text-xl font-semibold text-foreground">
+            {editPackage ? "Edit Package" : "Add Package"}
+          </SheetTitle>
+        </SheetHeader>
+
+        <ScrollArea className="h-[calc(100vh-160px)] pr-1">
+          <div className="space-y-5 pb-6">
+            {/* Package Name */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-foreground">
+                Package Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                data-ocid="admin.package_name_input"
+                value={form.name}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, name: e.target.value }))
+                }
+                placeholder="e.g. Basic Tribute Package"
+                className="bg-input border-border focus:border-gold"
+              />
+            </div>
+
+            {/* Tagline */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-foreground">
+                Tagline{" "}
+                <span className="text-xs text-muted-foreground">
+                  (optional)
+                </span>
+              </Label>
+              <Input
+                data-ocid="admin.package_tagline_input"
+                value={form.tagline}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, tagline: e.target.value }))
+                }
+                placeholder="e.g. Perfect for small families"
+                className="bg-input border-border focus:border-gold"
+              />
+            </div>
+
+            {/* Prices */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-foreground">
+                  Video Only Price ₹ <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  data-ocid="admin.package_video_price_input"
+                  type="number"
+                  min="0"
+                  value={form.videoOnlyPrice}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, videoOnlyPrice: e.target.value }))
+                  }
+                  placeholder="1000"
+                  className="bg-input border-border focus:border-gold"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-foreground">
+                  Voice Addon Price ₹{" "}
+                  <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  data-ocid="admin.package_voice_price_input"
+                  type="number"
+                  min="0"
+                  value={form.voiceAddonPrice}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, voiceAddonPrice: e.target.value }))
+                  }
+                  placeholder="1500"
+                  className="bg-input border-border focus:border-gold"
+                />
+              </div>
+            </div>
+
+            {/* Duration Description */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-foreground">
+                Duration Description
+              </Label>
+              <Input
+                data-ocid="admin.package_duration_input"
+                value={form.durationDescription}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    durationDescription: e.target.value,
+                  }))
+                }
+                placeholder="e.g. 1 Minute video"
+                className="bg-input border-border focus:border-gold"
+              />
+            </div>
+
+            {/* Member Details */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-foreground">
+                Member Details
+              </Label>
+              <Textarea
+                data-ocid="admin.package_member_details_textarea"
+                value={form.memberDetails}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, memberDetails: e.target.value }))
+                }
+                placeholder="e.g. Late person + 1-2 family members"
+                className="min-h-[80px] bg-input border-border focus:border-gold resize-none"
+              />
+            </div>
+
+            {/* Thumbnail Image */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-foreground">
+                Thumbnail Image
+              </Label>
+              <button
+                type="button"
+                className="w-full border border-dashed border-border rounded-xl p-5 text-center cursor-pointer hover:border-gold/40 transition-colors"
+                onClick={() => thumbnailRef.current?.click()}
+                data-ocid="admin.package_dropzone"
+              >
+                {thumbnailId ? (
+                  <div className="flex items-center justify-center gap-2 text-green-400">
+                    <Check className="w-4 h-4" />
+                    <span className="text-sm font-medium">
+                      Thumbnail uploaded
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-muted-foreground">
+                    <Upload className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Click to upload thumbnail</p>
+                    <p className="text-xs mt-1">PNG, JPG, WebP</p>
+                  </div>
+                )}
+                {uploading && (
+                  <div className="mt-3">
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gold rounded-full transition-all"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Uploading... {progress}%
+                    </p>
+                  </div>
+                )}
+              </button>
+              <input
+                ref={thumbnailRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                data-ocid="admin.package_upload_button"
+                onChange={handleThumbnailUpload}
+              />
+              {thumbnailId && (
+                <button
+                  type="button"
+                  onClick={() => setThumbnailId(undefined)}
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  Remove thumbnail
+                </button>
+              )}
+            </div>
+
+            {/* Toggles */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between py-3 border border-border rounded-xl px-4">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    Best Seller
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Show "Best Seller" badge on this package
+                  </p>
+                </div>
+                <Switch
+                  data-ocid="admin.package_bestseller_switch"
+                  checked={form.isBestSeller}
+                  onCheckedChange={(v) =>
+                    setForm((p) => ({ ...p, isBestSeller: v }))
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between py-3 border border-border rounded-xl px-4">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    Hide Package
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Hidden packages won't show on the pricing page
+                  </p>
+                </div>
+                <Switch
+                  data-ocid="admin.package_hidden_switch"
+                  checked={form.isHidden}
+                  onCheckedChange={(v) =>
+                    setForm((p) => ({ ...p, isHidden: v }))
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </ScrollArea>
+
+        <SheetFooter className="pt-4 border-t border-border">
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            className="text-muted-foreground"
+            data-ocid="admin.package_cancel_button"
+          >
+            Cancel
+          </Button>
+          <Button
+            data-ocid="admin.package_save_button"
+            onClick={handleSave}
+            disabled={isSaving || uploading}
+            className="bg-gold text-primary-foreground hover:bg-gold-light font-semibold"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                Saving...
+              </>
+            ) : editPackage ? (
+              "Save Changes"
+            ) : (
+              "Create Package"
             )}
           </Button>
         </SheetFooter>
@@ -612,6 +990,12 @@ export default function AdminDashboardPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<bigint | null>(null);
   const [seeded, setSeeded] = useState(false);
 
+  // Pricing state
+  const [packageSheetOpen, setPackageSheetOpen] = useState(false);
+  const [editPackage, setEditPackage] = useState<PackageType | null>(null);
+  const [deletePackageConfirm, setDeletePackageConfirm] =
+    useState<PackageId | null>(null);
+
   // Data hooks
   const {
     data: bookings,
@@ -622,11 +1006,15 @@ export default function AdminDashboardPage() {
     useGetAllPortfolioEntries();
   const { data: allMessages, isLoading: messagesLoading } =
     useGetAllClientMessages();
+  const { data: allPackages, isLoading: packagesLoading } = useGetAllPackages();
   const { mutateAsync: updateStatus, isPending: isUpdatingStatus } =
     useUpdateBookingStatus();
   const { mutateAsync: deleteEntry } = useDeletePortfolioEntry();
   const { mutateAsync: seedEntries, isPending: isSeeding } =
     useSeedPortfolioEntries();
+  const { mutateAsync: reorderEntry, isPending: isReordering } =
+    useReorderPortfolioEntry();
+  const { mutateAsync: deletePkg } = useDeletePackage();
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -676,6 +1064,24 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleDeletePackage = async (id: PackageId) => {
+    try {
+      await deletePkg(id);
+      toast.success("Package deleted");
+      setDeletePackageConfirm(null);
+    } catch {
+      toast.error("Failed to delete package");
+    }
+  };
+
+  const handleReorder = async (id: bigint, direction: ReorderDirection) => {
+    try {
+      await reorderEntry({ id, direction });
+    } catch {
+      toast.error("Failed to reorder entry");
+    }
+  };
+
   const handleLogout = () => {
     logout();
     queryClient.clear();
@@ -689,6 +1095,16 @@ export default function AdminDashboardPage() {
     { label: "Completed", value: BookingStatus.completed },
     { label: "Rejected", value: BookingStatus.rejected },
   ];
+
+  // Sort portfolio by sortOrder
+  const sortedPortfolio = portfolio
+    ? [...portfolio].sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder))
+    : [];
+
+  // Sort packages by sortOrder
+  const sortedPackages = allPackages
+    ? [...allPackages].sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder))
+    : [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -834,6 +1250,14 @@ export default function AdminDashboardPage() {
               >
                 <Film className="w-4 h-4" />
                 Portfolio
+              </TabsTrigger>
+              <TabsTrigger
+                data-ocid="admin.pricing_tab"
+                value="pricing"
+                className="flex items-center gap-2"
+              >
+                <Package className="w-4 h-4" />
+                Pricing
               </TabsTrigger>
               <TabsTrigger
                 data-ocid="admin.messages_tab"
@@ -1100,7 +1524,7 @@ export default function AdminDashboardPage() {
                     <Skeleton key={id} className="h-48 w-full rounded-xl" />
                   ))}
                 </div>
-              ) : !portfolio || portfolio.length === 0 ? (
+              ) : !sortedPortfolio || sortedPortfolio.length === 0 ? (
                 <div
                   data-ocid="admin.portfolio_empty_state"
                   className="text-center py-16 rounded-xl border border-dashed border-border"
@@ -1122,12 +1546,44 @@ export default function AdminDashboardPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {portfolio.map((entry, i) => (
+                  {sortedPortfolio.map((entry, i) => (
                     <div
                       key={entry.id.toString()}
                       data-ocid={`admin.portfolio_item.${i + 1}`}
-                      className="bg-card rounded-xl border border-border overflow-hidden card-glow"
+                      className="bg-card rounded-xl border border-border overflow-hidden card-glow relative"
                     >
+                      {/* Up/Down Reorder Buttons */}
+                      <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+                        <Button
+                          data-ocid={`admin.portfolio_up_button.${i + 1}`}
+                          size="sm"
+                          variant="ghost"
+                          disabled={i === 0 || isReordering}
+                          onClick={() =>
+                            handleReorder(entry.id, ReorderDirection.up)
+                          }
+                          className="h-7 w-7 p-0 bg-black/40 hover:bg-black/60 text-white/70 hover:text-white disabled:opacity-30 rounded"
+                          title="Move up"
+                        >
+                          <ChevronUp className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          data-ocid={`admin.portfolio_down_button.${i + 1}`}
+                          size="sm"
+                          variant="ghost"
+                          disabled={
+                            i === sortedPortfolio.length - 1 || isReordering
+                          }
+                          onClick={() =>
+                            handleReorder(entry.id, ReorderDirection.down)
+                          }
+                          className="h-7 w-7 p-0 bg-black/40 hover:bg-black/60 text-white/70 hover:text-white disabled:opacity-30 rounded"
+                          title="Move down"
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </Button>
+                      </div>
+
                       {/* Thumbnail */}
                       <div className="aspect-video bg-muted relative">
                         {entry.thumbnailBlobId ? (
@@ -1185,6 +1641,162 @@ export default function AdminDashboardPage() {
                             size="sm"
                             variant="ghost"
                             onClick={() => setDeleteConfirm(entry.id)}
+                            className="flex-1 h-8 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* ─── Pricing Tab ─────────────────────────────── */}
+            <TabsContent value="pricing" className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-display text-lg font-semibold text-foreground">
+                    Packages
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Manage your service packages. Changes reflect immediately on
+                    the pricing page.
+                  </p>
+                </div>
+                <Button
+                  data-ocid="admin.package_add_button"
+                  onClick={() => {
+                    setEditPackage(null);
+                    setPackageSheetOpen(true);
+                  }}
+                  className="bg-gold text-primary-foreground hover:bg-gold-light font-semibold"
+                  size="sm"
+                >
+                  <Plus className="mr-2 w-4 h-4" />
+                  Add Package
+                </Button>
+              </div>
+
+              {packagesLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {["pkg-sk-1", "pkg-sk-2", "pkg-sk-3"].map((id) => (
+                    <Skeleton key={id} className="h-56 w-full rounded-xl" />
+                  ))}
+                </div>
+              ) : !sortedPackages || sortedPackages.length === 0 ? (
+                <div
+                  data-ocid="admin.pricing_empty_state"
+                  className="text-center py-16 rounded-xl border border-dashed border-border"
+                >
+                  <Package className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-muted-foreground">No packages yet</p>
+                  <Button
+                    className="mt-4 bg-gold text-primary-foreground hover:bg-gold-light"
+                    size="sm"
+                    onClick={() => {
+                      setEditPackage(null);
+                      setPackageSheetOpen(true);
+                    }}
+                  >
+                    Add First Package
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {sortedPackages.map((pkg, i) => (
+                    <div
+                      key={pkg.id.toString()}
+                      data-ocid={`admin.pricing_item.${i + 1}`}
+                      className="bg-card rounded-xl border border-border overflow-hidden card-glow"
+                    >
+                      {/* Thumbnail */}
+                      <div className="relative w-full h-36 bg-gradient-to-br from-[oklch(0.18_0.03_60)] via-[oklch(0.22_0.06_70)] to-[oklch(0.16_0.02_50)] overflow-hidden">
+                        {pkg.thumbnailBlobId ? (
+                          <img
+                            src={pkg.thumbnailBlobId}
+                            alt={pkg.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center gap-1">
+                            <Package className="w-8 h-8 text-gold/30" />
+                            <span className="text-xs text-gold/40 font-semibold uppercase tracking-widest">
+                              {pkg.name.split(" ").slice(0, 2).join(" ")}
+                            </span>
+                          </div>
+                        )}
+                        {/* Badges overlay */}
+                        <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+                          {pkg.isBestSeller && (
+                            <span className="bg-gold text-primary-foreground text-xs font-bold px-2 py-0.5 rounded-full">
+                              ✦ Best Seller
+                            </span>
+                          )}
+                          {pkg.isHidden && (
+                            <span className="bg-muted text-muted-foreground text-xs font-medium px-2 py-0.5 rounded-full border border-border">
+                              Hidden
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Info */}
+                      <div className="p-4 space-y-2">
+                        <h3 className="font-display font-semibold text-foreground text-sm line-clamp-1">
+                          {pkg.name}
+                        </h3>
+                        {pkg.tagline && (
+                          <p className="text-xs text-muted-foreground/70 italic line-clamp-1">
+                            {pkg.tagline}
+                          </p>
+                        )}
+                        {/* Prices */}
+                        <div className="flex items-center gap-3">
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">
+                              Video:{" "}
+                            </span>
+                            <span className="text-gold font-semibold">
+                              ₹{formatPrice(pkg.videoOnlyPrice)}
+                            </span>
+                          </div>
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">
+                              +Voice:{" "}
+                            </span>
+                            <span className="text-gold font-semibold">
+                              ₹{formatPrice(pkg.voiceAddonPrice)}
+                            </span>
+                          </div>
+                        </div>
+                        {pkg.durationDescription && (
+                          <p className="text-xs text-muted-foreground line-clamp-1">
+                            {pkg.durationDescription}
+                          </p>
+                        )}
+                        {/* Actions */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <Button
+                            data-ocid={`admin.pricing_edit_button.${i + 1}`}
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditPackage(pkg);
+                              setPackageSheetOpen(true);
+                            }}
+                            className="flex-1 h-8 text-xs text-muted-foreground hover:text-foreground gap-1"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            Edit
+                          </Button>
+                          <Button
+                            data-ocid={`admin.pricing_delete_button.${i + 1}`}
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDeletePackageConfirm(pkg.id)}
                             className="flex-1 h-8 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 gap-1"
                           >
                             <Trash2 className="w-3 h-3" />
@@ -1324,6 +1936,18 @@ export default function AdminDashboardPage() {
           setEditEntry(null);
         }}
         editEntry={editEntry}
+        currentCount={sortedPortfolio.length}
+      />
+
+      {/* Package Sheet */}
+      <PackageSheet
+        open={packageSheetOpen}
+        onClose={() => {
+          setPackageSheetOpen(false);
+          setEditPackage(null);
+        }}
+        editPackage={editPackage}
+        currentCount={sortedPackages.length}
       />
 
       {/* Order Details Sheet */}
@@ -1334,7 +1958,7 @@ export default function AdminDashboardPage() {
         isUpdating={isUpdatingStatus}
       />
 
-      {/* Delete Confirm Dialog */}
+      {/* Delete Portfolio Confirm Dialog */}
       <AlertDialog
         open={deleteConfirm !== null}
         onOpenChange={() => setDeleteConfirm(null)}
@@ -1359,6 +1983,42 @@ export default function AdminDashboardPage() {
               data-ocid="admin.portfolio_delete_confirm_button"
               onClick={() =>
                 deleteConfirm !== null && handleDeleteEntry(deleteConfirm)
+              }
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Package Confirm Dialog */}
+      <AlertDialog
+        open={deletePackageConfirm !== null}
+        onOpenChange={() => setDeletePackageConfirm(null)}
+      >
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-foreground">
+              Delete Package
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              Are you sure you want to delete this package? This will remove it
+              from the pricing page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              data-ocid="admin.pricing_delete_cancel_button"
+              className="border-border text-foreground"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-ocid="admin.pricing_delete_confirm_button"
+              onClick={() =>
+                deletePackageConfirm !== null &&
+                handleDeletePackage(deletePackageConfirm)
               }
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >

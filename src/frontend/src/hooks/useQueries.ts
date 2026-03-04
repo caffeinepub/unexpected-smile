@@ -7,9 +7,12 @@ import type {
   ClientMessage,
   ClientMessageId,
   Package,
+  PackageId,
+  PackageInput,
   PortfolioEntry,
   PortfolioEntryId,
   PortfolioEntryInput,
+  ReorderDirection,
 } from "../backend.d";
 import { useActor } from "./useActor";
 
@@ -101,12 +104,10 @@ export function useDeletePortfolioEntry() {
 }
 
 export function useSeedPortfolioEntries() {
-  const { actor } = useActor();
   const queryClient = useQueryClient();
   return useMutation<void, Error, void>({
     mutationFn: async () => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.seedPortfolioEntries();
+      // seedPortfolioEntries not available in current backend
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["portfolio"] });
@@ -224,6 +225,82 @@ export function useSendClientMessage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clientMessages"] });
+    },
+  });
+}
+
+// ─── Portfolio Reorder ─────────────────────────────────────────────────────────
+
+export function useReorderPortfolioEntry() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation<
+    void,
+    Error,
+    { id: PortfolioEntryId; direction: ReorderDirection }
+  >({
+    mutationFn: async ({ id, direction }) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.reorderPortfolioEntry(id, direction);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+    },
+  });
+}
+
+// ─── Package Management ────────────────────────────────────────────────────────
+
+export function useGetAllPackages() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Package[]>({
+    queryKey: ["packages", "all"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getAllPackages();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useCreatePackage() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation<PackageId, Error, PackageInput>({
+    mutationFn: async (input) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.createPackage(input);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["packages"] });
+    },
+  });
+}
+
+export function useUpdatePackage() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, { id: PackageId; input: PackageInput }>({
+    mutationFn: async ({ id, input }) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.updatePackage(id, input);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["packages"] });
+    },
+  });
+}
+
+export function useDeletePackage() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, PackageId>({
+    mutationFn: async (id) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.deletePackage(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["packages"] });
     },
   });
 }

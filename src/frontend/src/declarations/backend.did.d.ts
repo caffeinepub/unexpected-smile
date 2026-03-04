@@ -53,13 +53,28 @@ export interface Package {
   'id' : PackageId,
   'videoOnlyPrice' : bigint,
   'tagline' : [] | [string],
+  'thumbnailBlobId' : [] | [string],
+  'sortOrder' : bigint,
   'durationDescription' : string,
   'name' : string,
   'memberDetails' : string,
+  'isHidden' : boolean,
   'isBestSeller' : boolean,
   'voiceAddonPrice' : bigint,
 }
 export type PackageId = bigint;
+export interface PackageInput {
+  'videoOnlyPrice' : bigint,
+  'tagline' : [] | [string],
+  'thumbnailBlobId' : [] | [string],
+  'sortOrder' : bigint,
+  'durationDescription' : string,
+  'name' : string,
+  'memberDetails' : string,
+  'isHidden' : boolean,
+  'isBestSeller' : boolean,
+  'voiceAddonPrice' : bigint,
+}
 export interface PortfolioEntry {
   'id' : PortfolioEntryId,
   'title' : string,
@@ -81,6 +96,8 @@ export interface PortfolioEntryInput {
   'description' : string,
   'embedUrl' : [] | [string],
 }
+export type ReorderDirection = { 'up' : null } |
+  { 'down' : null };
 export interface UserProfile { 'name' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
@@ -115,9 +132,12 @@ export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'createBooking' : ActorMethod<[BookingInput], BookingId>,
+  'createPackage' : ActorMethod<[PackageInput], PackageId>,
   'createPortfolioEntry' : ActorMethod<[PortfolioEntryInput], PortfolioEntryId>,
+  'deletePackage' : ActorMethod<[PackageId], undefined>,
   'deletePortfolioEntry' : ActorMethod<[PortfolioEntryId], undefined>,
   'getAllClientMessages' : ActorMethod<[], Array<ClientMessage>>,
+  'getAllPackages' : ActorMethod<[], Array<Package>>,
   'getAllPortfolioEntries' : ActorMethod<[], Array<PortfolioEntry>>,
   'getBookingById' : ActorMethod<[BookingId], [] | [Booking]>,
   'getBookings' : ActorMethod<[[] | [BookingStatus]], Array<Booking>>,
@@ -128,8 +148,11 @@ export interface _SERVICE {
   'getPublishedPortfolioEntries' : ActorMethod<[], Array<PortfolioEntry>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'reorderPortfolioEntry' : ActorMethod<
+    [PortfolioEntryId, ReorderDirection],
+    undefined
+  >,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
-  'seedPortfolioEntries' : ActorMethod<[], undefined>,
   'sendClientMessage' : ActorMethod<
     [BookingId, string, string],
     ClientMessageId
@@ -138,6 +161,7 @@ export interface _SERVICE {
     [BookingId, BookingStatus, [] | [string]],
     undefined
   >,
+  'updatePackage' : ActorMethod<[PackageId, PackageInput], undefined>,
   'updatePortfolioEntry' : ActorMethod<
     [PortfolioEntryId, PortfolioEntryInput],
     undefined

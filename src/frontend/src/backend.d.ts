@@ -27,6 +27,18 @@ export interface BookingInput {
     utrNumber: string;
     packageId: PackageId;
 }
+export interface PackageInput {
+    videoOnlyPrice: bigint;
+    tagline?: string;
+    thumbnailBlobId?: string;
+    sortOrder: bigint;
+    durationDescription: string;
+    name: string;
+    memberDetails: string;
+    isHidden: boolean;
+    isBestSeller: boolean;
+    voiceAddonPrice: bigint;
+}
 export interface ClientMessage {
     id: ClientMessageId;
     bookingId: BookingId;
@@ -38,9 +50,12 @@ export interface Package {
     id: PackageId;
     videoOnlyPrice: bigint;
     tagline?: string;
+    thumbnailBlobId?: string;
+    sortOrder: bigint;
     durationDescription: string;
     name: string;
     memberDetails: string;
+    isHidden: boolean;
     isBestSeller: boolean;
     voiceAddonPrice: bigint;
 }
@@ -81,6 +96,10 @@ export enum BookingStatus {
     approved = "approved",
     rejected = "rejected"
 }
+export enum ReorderDirection {
+    up = "up",
+    down = "down"
+}
 export enum UserRole {
     admin = "admin",
     user = "user",
@@ -93,9 +112,12 @@ export enum Variant_videoOnly_videoAndVoice {
 export interface backendInterface {
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     createBooking(input: BookingInput): Promise<BookingId>;
+    createPackage(input: PackageInput): Promise<PackageId>;
     createPortfolioEntry(input: PortfolioEntryInput): Promise<PortfolioEntryId>;
+    deletePackage(id: PackageId): Promise<void>;
     deletePortfolioEntry(id: PortfolioEntryId): Promise<void>;
     getAllClientMessages(): Promise<Array<ClientMessage>>;
+    getAllPackages(): Promise<Array<Package>>;
     getAllPortfolioEntries(): Promise<Array<PortfolioEntry>>;
     getBookingById(id: BookingId): Promise<Booking | null>;
     getBookings(statusFilter: BookingStatus | null): Promise<Array<Booking>>;
@@ -106,9 +128,10 @@ export interface backendInterface {
     getPublishedPortfolioEntries(): Promise<Array<PortfolioEntry>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
+    reorderPortfolioEntry(id: PortfolioEntryId, direction: ReorderDirection): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
-    seedPortfolioEntries(): Promise<void>;
     sendClientMessage(bookingId: BookingId, senderName: string, messageText: string): Promise<ClientMessageId>;
     updateBookingStatus(id: BookingId, status: BookingStatus, adminNotes: string | null): Promise<void>;
+    updatePackage(id: PackageId, input: PackageInput): Promise<void>;
     updatePortfolioEntry(id: PortfolioEntryId, input: PortfolioEntryInput): Promise<void>;
 }

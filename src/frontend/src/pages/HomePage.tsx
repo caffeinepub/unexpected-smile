@@ -132,6 +132,41 @@ function PortfolioCard({
   );
 }
 
+// Thumbnail fallbacks per package index
+const PACKAGE_THUMBNAILS = [
+  {
+    image: "/assets/generated/package-basic-tribute.dim_600x400.jpg",
+    gradient:
+      "from-[oklch(0.18_0.03_60)] via-[oklch(0.22_0.05_70)] to-[oklch(0.16_0.02_50)]",
+    icon: "🕯️",
+    label: "Basic Tribute",
+  },
+  {
+    image: "/assets/generated/package-family-special.dim_600x400.jpg",
+    gradient:
+      "from-[oklch(0.20_0.06_75)] via-[oklch(0.25_0.08_78)] to-[oklch(0.18_0.04_65)]",
+    icon: "👨‍👩‍👧‍👦",
+    label: "Family Special",
+  },
+  {
+    image: "/assets/generated/package-grand-cinematic.dim_600x400.jpg",
+    gradient:
+      "from-[oklch(0.15_0.04_55)] via-[oklch(0.22_0.07_72)] to-[oklch(0.18_0.05_80)]",
+    icon: "🎬",
+    label: "Cinematic",
+  },
+];
+
+function getVoiceLabel(pkgName: string): string {
+  if (
+    pkgName.toLowerCase().includes("grand") ||
+    pkgName.toLowerCase().includes("cinematic")
+  ) {
+    return "Full Voice Message";
+  }
+  return "Their Voice";
+}
+
 function PricingCard({
   pkg,
   index,
@@ -141,6 +176,9 @@ function PricingCard({
   index: number;
   onBook: (id: bigint) => void;
 }) {
+  const thumb = PACKAGE_THUMBNAILS[index] ?? PACKAGE_THUMBNAILS[0];
+  const voiceLabel = getVoiceLabel(pkg.name);
+
   return (
     <motion.div
       variants={fadeUp}
@@ -152,23 +190,48 @@ function PricingCard({
           : "bg-card card-glow"
       }`}
     >
+      {/* Thumbnail */}
+      <div
+        className={`relative w-full h-40 bg-gradient-to-br ${thumb.gradient} flex flex-col items-center justify-center gap-2 overflow-hidden`}
+      >
+        {pkg.thumbnailBlobId ? (
+          <img
+            src={pkg.thumbnailBlobId}
+            alt={pkg.name}
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : thumb.image ? (
+          <img
+            src={thumb.image}
+            alt={thumb.label}
+            className="absolute inset-0 w-full h-full object-cover opacity-80"
+          />
+        ) : (
+          <>
+            <div className="text-5xl">{thumb.icon}</div>
+            <p className="text-gold/60 text-xs font-semibold uppercase tracking-widest">
+              {thumb.label}
+            </p>
+          </>
+        )}
+        {/* Subtle film-grain overlay */}
+        <div className="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48ZmlsdGVyIGlkPSJub2lzZSI+PGZlVHVyYnVsZW5jZSB0eXBlPSJmcmFjdGFsTm9pc2UiIGJhc2VGcmVxdWVuY3k9IjAuNjUiIG51bU9jdGF2ZXM9IjMiIHN0aXRjaFRpbGVzPSJzdGl0Y2giLz48ZmVDb2xvck1hdHJpeCB0eXBlPSJzYXR1cmF0ZSIgdmFsdWVzPSIwIi8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9IjMwMCIgaGVpZ2h0PSIzMDAiIGZpbHRlcj0idXJsKCNub2lzZSkiIG9wYWNpdHk9IjAuNCIvPjwvc3ZnPg==')] pointer-events-none" />
+      </div>
+
       {pkg.isBestSeller && (
-        <div className="absolute top-0 inset-x-0 flex justify-center">
-          <div className="bg-gold text-primary-foreground text-xs font-bold tracking-widest uppercase px-6 py-1.5 rounded-b-lg">
+        <div className="absolute top-[148px] inset-x-0 flex justify-center">
+          <div className="bg-gold text-primary-foreground text-xs font-bold tracking-widest uppercase px-6 py-1.5 rounded-b-lg shadow-lg">
             ✦ Best Seller
           </div>
         </div>
       )}
 
       <div
-        className={`p-7 flex flex-col flex-1 ${pkg.isBestSeller ? "pt-10" : ""}`}
+        className={`p-7 flex flex-col flex-1 ${pkg.isBestSeller ? "pt-8" : ""}`}
       >
-        {/* Header */}
-        <div className="mb-6">
-          <div className="w-10 h-10 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center mb-4">
-            <Star className="w-5 h-5 text-gold" />
-          </div>
-          <h3 className="font-display text-xl font-semibold text-foreground mb-2">
+        {/* Package Title */}
+        <div className="mb-5">
+          <h3 className="font-display text-xl font-semibold text-foreground mb-1">
             {pkg.name}
           </h3>
           {pkg.tagline && (
@@ -178,39 +241,41 @@ function PricingCard({
           )}
         </div>
 
-        {/* Details */}
-        <div className="space-y-2 mb-6">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Film className="w-4 h-4 text-gold/60 flex-shrink-0" />
-            <span>{pkg.durationDescription}</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Users className="w-4 h-4 text-gold/60 flex-shrink-0" />
-            <span>{pkg.memberDetails}</span>
-          </div>
-        </div>
-
-        {/* Prices */}
-        <div className="space-y-3 mb-8 flex-1">
+        {/* Price Options */}
+        <div className="space-y-3 mb-5 flex-1">
+          {/* Video Only */}
           <div className="rounded-lg bg-muted/50 border border-border px-4 py-3">
             <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
               Video Only
             </div>
-            <div className="text-2xl font-display font-bold text-foreground">
-              ₹{formatPrice(pkg.videoOnlyPrice)}
-              <span className="text-sm font-normal text-muted-foreground ml-1">
-                /-
+            <div className="flex items-baseline gap-1">
+              <span className="text-2xl font-display font-bold text-foreground">
+                ₹ {formatPrice(pkg.videoOnlyPrice)}/-
               </span>
             </div>
           </div>
+          {/* Voice Addon */}
           <div className="rounded-lg bg-gold/5 border border-gold/20 px-4 py-3">
             <div className="text-xs text-gold/70 uppercase tracking-wider mb-1">
-              Video + Their Voice
+              Video + {voiceLabel}
             </div>
-            <div className="text-2xl font-display font-bold text-gold">
-              ₹{formatPrice(pkg.voiceAddonPrice)}
-              <span className="text-sm font-normal text-gold/60 ml-1">/-</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-2xl font-display font-bold text-gold">
+                ₹ {formatPrice(pkg.voiceAddonPrice)}/-
+              </span>
             </div>
+          </div>
+        </div>
+
+        {/* Details */}
+        <div className="space-y-2 mb-6 border-t border-border/40 pt-4">
+          <div className="flex items-start gap-2 text-sm text-muted-foreground">
+            <Film className="w-4 h-4 text-gold/60 flex-shrink-0 mt-0.5" />
+            <span>{pkg.durationDescription}</span>
+          </div>
+          <div className="flex items-start gap-2 text-sm text-muted-foreground">
+            <Users className="w-4 h-4 text-gold/60 flex-shrink-0 mt-0.5" />
+            <span>{pkg.memberDetails}</span>
           </div>
         </div>
 
@@ -402,15 +467,13 @@ export default function HomePage() {
 
       {/* ─── Hero ────────────────────────────────────────────── */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-        {/* Flyer background image */}
+        {/* Cinematic gradient background */}
         <div className="absolute inset-0">
-          <img
-            src="/assets/uploads/WhatsApp-Image-2026-03-04-at-1.19.41-PM-1.jpeg"
-            alt="UNEXPECTED.SMILE - Bring Their Blessings Back"
-            className="w-full h-full object-cover object-center"
-          />
-          {/* Dark overlay to ensure text readability */}
-          <div className="absolute inset-0 bg-black/60" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,oklch(0.18_0.05_45)_0%,oklch(0.10_0.03_30)_40%,oklch(0.07_0.01_0)_100%)]" />
+          {/* Warm amber glow top-right */}
+          <div className="absolute top-0 right-0 w-[60%] h-[60%] bg-[radial-gradient(ellipse_at_top_right,oklch(0.35_0.12_65)_0%,transparent_60%)] opacity-30" />
+          {/* Gold glow bottom-left */}
+          <div className="absolute bottom-0 left-0 w-[50%] h-[50%] bg-[radial-gradient(ellipse_at_bottom_left,oklch(0.28_0.10_55)_0%,transparent_60%)] opacity-20" />
           {/* Bottom gradient for smooth section transition */}
           <div className="absolute bottom-0 inset-x-0 h-40 bg-gradient-to-t from-background to-transparent" />
         </div>
