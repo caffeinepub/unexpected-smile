@@ -6,6 +6,7 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
+import { LanguageProvider } from "./contexts/LanguageContext";
 import BookingPage from "./pages/BookingPage";
 import CheckoutPage from "./pages/CheckoutPage";
 import ClientDashboardPage from "./pages/ClientDashboardPage";
@@ -17,10 +18,10 @@ import AdminLoginPage from "./pages/admin/AdminLoginPage";
 // Root layout
 const rootRoute = createRootRoute({
   component: () => (
-    <>
+    <LanguageProvider>
       <Outlet />
       <Toaster richColors position="top-right" />
-    </>
+    </LanguageProvider>
   ),
 });
 

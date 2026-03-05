@@ -63,6 +63,7 @@ import {
   Plus,
   RefreshCw,
   ShoppingCart,
+  Star,
   Trash2,
   Upload,
   X,
@@ -145,6 +146,55 @@ function AdminBlobImage({
       className={className ?? "w-full h-full object-cover"}
     />
   );
+}
+
+// ─── Reviews CMS ──────────────────────────────────────────────────────────────
+
+const APPROVED_REVIEWS_KEY = "us_approved_reviews";
+
+const STATIC_REVIEWS = [
+  {
+    id: 0,
+    name: "Priya Sharma",
+    location: "Hyderabad",
+    event: "Wedding Tribute",
+    rating: 5,
+    text: "We were in tears when we saw the video. My father-in-law who passed away last year was there at the wedding in spirit, and seeing him speak again — it felt like a miracle. UNEXPECTED.SMILE gave us a gift we will treasure forever.",
+  },
+  {
+    id: 1,
+    name: "Rajesh Kumar",
+    location: "Bangalore",
+    event: "Birthday Surprise",
+    rating: 5,
+    text: "My mother's 60th birthday was made extraordinary. We had a tribute video of my late grandfather blessing her. The quality of the AI recreation was unbelievably realistic — everyone was moved deeply. Truly worth every rupee.",
+  },
+  {
+    id: 2,
+    name: "Ananya Reddy",
+    location: "Chennai",
+    event: "Family Reunion",
+    rating: 5,
+    text: "The team was incredibly sensitive and professional. They recreated my grandmother's smile and voice perfectly. This was our family's most emotional and beautiful moment. I cannot recommend UNEXPECTED.SMILE enough.",
+  },
+] as const;
+
+function getApprovedIds(): number[] {
+  try {
+    const stored = localStorage.getItem(APPROVED_REVIEWS_KEY);
+    if (!stored) return STATIC_REVIEWS.map((r) => r.id);
+    const parsed = JSON.parse(stored);
+    if (Array.isArray(parsed)) return parsed as number[];
+    return STATIC_REVIEWS.map((r) => r.id);
+  } catch {
+    return STATIC_REVIEWS.map((r) => r.id);
+  }
+}
+
+function saveApprovedIds(ids: number[]) {
+  localStorage.setItem(APPROVED_REVIEWS_KEY, JSON.stringify(ids));
+  // Dispatch storage event so other tabs pick it up
+  window.dispatchEvent(new Event("storage"));
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1162,7 +1212,7 @@ export default function AdminDashboardPage() {
   } = useInternetIdentity();
 
   // "User is already authenticated" means AuthClient already has a valid identity —
-  // treat it as a non-fatal error (the identity is already stored in AuthClient).
+  // treat it as non-blocking (identity loads naturally from AuthClient on init).
   const isAlreadyAuthError =
     loginStatus === "loginError" &&
     loginError?.message === "User is already authenticated";
@@ -1182,6 +1232,11 @@ export default function AdminDashboardPage() {
   const [editPackage, setEditPackage] = useState<PackageType | null>(null);
   const [deletePackageConfirm, setDeletePackageConfirm] =
     useState<PackageId | null>(null);
+
+  // Reviews CMS state
+  const [approvedReviewIds, setApprovedReviewIds] = useState<number[]>(() =>
+    getApprovedIds(),
+  );
 
   // Data hooks
   const {
@@ -1211,21 +1266,14 @@ export default function AdminDashboardPage() {
   }, [isAuthenticated, navigate]);
 
   // When admin is authenticated via localStorage but II identity is not yet present,
-  // automatically trigger II login so useActor can call _initializeAccessControlWithSecret
-  // and authorize backend admin operations (create/update/delete portfolio, packages, etc.).
-  // Include "loginError" state so that if the user dismisses and the page re-renders (e.g.
-  // returns from another tab) we don't re-trigger unnecessarily — only trigger on "idle".
-  // "isAlreadyAuthError" is handled separately below (identity is actually already available).
+  // automatically trigger II login so useActor can call _initializeAccessControlWithSecret.
+  // Fire as soon as AuthClient finishes initializing and no identity is loaded.
   useEffect(() => {
-    if (
-      isAuthenticated &&
-      !iiInitializing &&
-      !identity &&
-      !isLoggingIn &&
-      loginStatus === "idle"
-    ) {
-      iiLogin();
-    }
+    if (!isAuthenticated || iiInitializing || identity || isLoggingIn) return;
+    // Only trigger once when idle (not in an error state from a previous attempt)
+    if (loginStatus !== "idle") return;
+
+    iiLogin();
   }, [
     isAuthenticated,
     iiInitializing,
@@ -1318,18 +1366,11 @@ export default function AdminDashboardPage() {
     ? [...allPackages].sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder))
     : [];
 
-  // Show a connecting screen while Internet Identity is being established.
-  // Without an II identity, the actor runs anonymously and backend admin calls
-  // will fail with "Unauthorized: Only admins can create portfolio entries".
-  // Exception: "User is already authenticated" loginError means AuthClient already
-  // has a valid identity — treat it as non-blocking (spinner resolves naturally).
-  if (
-    isAuthenticated &&
-    (iiInitializing ||
-      isLoggingIn ||
-      (!identity && loginStatus !== "loginError") ||
-      (!identity && loginStatus === "loginError" && isAlreadyAuthError))
-  ) {
+  // Show a connecting screen only while II is actively initializing or the popup is open.
+  // Once initialization settles (idle/error/success), render the dashboard.
+  // If the actor is anonymous (no identity), admin writes will fail with toast errors
+  // and the user can retry — but don't block the entire dashboard.
+  if (isAuthenticated && (iiInitializing || isLoggingIn)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -1338,18 +1379,20 @@ export default function AdminDashboardPage() {
           </div>
           <div>
             <p className="font-display font-semibold text-foreground text-lg">
-              Connecting to Dashboard
+              {isLoggingIn
+                ? "Complete Authorization"
+                : "Connecting to Dashboard"}
             </p>
             <p className="text-sm text-muted-foreground mt-1">
               {isLoggingIn
-                ? "Completing secure authorization — please complete the popup…"
-                : "Initializing secure session…"}
+                ? "A browser popup has opened — please complete the step to authorize admin access."
+                : "Loading your secure admin session…"}
             </p>
           </div>
           {isLoggingIn && (
             <p className="text-xs text-muted-foreground/60 max-w-xs mx-auto">
-              A browser popup has opened. Complete the Internet Identity step to
-              authorize admin operations.
+              This one-time step links your browser to the admin account. You
+              won't need to repeat it until your session expires.
             </p>
           )}
         </div>
@@ -1357,9 +1400,8 @@ export default function AdminDashboardPage() {
     );
   }
 
-  // If II login errored (e.g. popup dismissed) and we still have no identity,
-  // show a retry button. "User is already authenticated" errors are excluded
-  // because the AuthClient identity is still valid in that case.
+  // If II login errored (popup dismissed) and we have no identity, show retry.
+  // The dashboard is still accessible but admin writes will fail without identity.
   if (
     isAuthenticated &&
     loginStatus === "loginError" &&
@@ -1557,6 +1599,14 @@ export default function AdminDashboardPage() {
                     {allMessages.length}
                   </span>
                 )}
+              </TabsTrigger>
+              <TabsTrigger
+                data-ocid="admin.reviews_tab"
+                value="reviews"
+                className="flex items-center gap-2"
+              >
+                <Star className="w-4 h-4" />
+                Reviews
               </TabsTrigger>
             </TabsList>
 
@@ -2100,6 +2150,130 @@ export default function AdminDashboardPage() {
                   ))}
                 </div>
               )}
+            </TabsContent>
+
+            {/* ─── Reviews Tab ──────────────────────────────── */}
+            <TabsContent value="reviews" className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-display text-lg font-semibold text-foreground">
+                    Reviews & Testimonials
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Toggle which reviews appear on the public homepage.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {STATIC_REVIEWS.map((review, i) => {
+                  const isApproved = approvedReviewIds.includes(review.id);
+                  return (
+                    <div
+                      key={review.id}
+                      data-ocid={`admin.review_item.${i + 1}`}
+                      className={`bg-card rounded-xl border p-5 transition-all ${
+                        isApproved
+                          ? "border-gold/20"
+                          : "border-border opacity-60"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <p className="font-semibold text-foreground text-sm">
+                              {review.name}
+                            </p>
+                            <span className="text-xs text-muted-foreground/60">
+                              {review.location} · {review.event}
+                            </span>
+                            <div className="flex items-center gap-0.5 ml-1">
+                              {[1, 2, 3, 4, 5].map((s) => (
+                                <Star
+                                  key={s}
+                                  className="w-3 h-3 text-gold fill-current"
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 italic">
+                            "{review.text}"
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                          <Switch
+                            data-ocid={`admin.review_switch.${i + 1}`}
+                            checked={isApproved}
+                            onCheckedChange={(checked) => {
+                              const newIds = checked
+                                ? [...approvedReviewIds, review.id]
+                                : approvedReviewIds.filter(
+                                    (id) => id !== review.id,
+                                  );
+                              setApprovedReviewIds(newIds);
+                              saveApprovedIds(newIds);
+                            }}
+                          />
+                          <span
+                            className={`text-xs font-medium ${isApproved ? "text-green-400" : "text-muted-foreground"}`}
+                          >
+                            {isApproved ? "Visible" : "Hidden"}
+                          </span>
+                        </div>
+                      </div>
+                      {/* Quick action buttons */}
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/40">
+                        <Button
+                          data-ocid={`admin.review_approve_button.${i + 1}`}
+                          size="sm"
+                          variant="ghost"
+                          disabled={isApproved}
+                          onClick={() => {
+                            const newIds = [...approvedReviewIds, review.id];
+                            setApprovedReviewIds(newIds);
+                            saveApprovedIds(newIds);
+                          }}
+                          className="h-7 px-3 text-xs text-green-400 hover:text-green-300 hover:bg-green-900/20 disabled:opacity-30"
+                        >
+                          <Check className="w-3 h-3 mr-1" />
+                          Approve
+                        </Button>
+                        <Button
+                          data-ocid={`admin.review_reject_button.${i + 1}`}
+                          size="sm"
+                          variant="ghost"
+                          disabled={!isApproved}
+                          onClick={() => {
+                            const newIds = approvedReviewIds.filter(
+                              (id) => id !== review.id,
+                            );
+                            setApprovedReviewIds(newIds);
+                            saveApprovedIds(newIds);
+                          }}
+                          className="h-7 px-3 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 disabled:opacity-30"
+                        >
+                          <X className="w-3 h-3 mr-1" />
+                          Hide
+                        </Button>
+                        <span className="ml-auto text-xs text-muted-foreground/40">
+                          Review #{review.id + 1}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="p-4 bg-muted/20 rounded-xl border border-border text-xs text-muted-foreground">
+                <p className="font-medium text-foreground mb-1">
+                  How this works
+                </p>
+                <p>
+                  Approved reviews are shown on the public homepage. Toggle the
+                  switch to show or hide each review instantly — no page reload
+                  needed.
+                </p>
+              </div>
             </TabsContent>
 
             {/* ─── Messages Tab ──────────────────────────────── */}

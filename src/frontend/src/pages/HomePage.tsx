@@ -4,7 +4,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
@@ -33,11 +32,59 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import type { Package, PortfolioEntry } from "../backend.d";
+import { useLanguage } from "../contexts/LanguageContext";
 import { useBlobStorage } from "../hooks/useBlobStorage";
 import {
   useGetPackages,
   useGetPublishedPortfolioEntries,
 } from "../hooks/useQueries";
+
+// ─── Static Reviews Data ──────────────────────────────────────────────────────
+const ALL_REVIEWS = [
+  {
+    id: 0,
+    name: "Priya Sharma",
+    location: "Hyderabad",
+    event: "Wedding Tribute",
+    rating: 5,
+    text: "We were in tears when we saw the video. My father-in-law who passed away last year was there at the wedding in spirit, and seeing him speak again — it felt like a miracle. UNEXPECTED.SMILE gave us a gift we will treasure forever.",
+  },
+  {
+    id: 1,
+    name: "Rajesh Kumar",
+    location: "Bangalore",
+    event: "Birthday Surprise",
+    rating: 5,
+    text: "My mother's 60th birthday was made extraordinary. We had a tribute video of my late grandfather blessing her. The quality of the AI recreation was unbelievably realistic — everyone was moved deeply. Truly worth every rupee.",
+  },
+  {
+    id: 2,
+    name: "Ananya Reddy",
+    location: "Chennai",
+    event: "Family Reunion",
+    rating: 5,
+    text: "The team was incredibly sensitive and professional. They recreated my grandmother's smile and voice perfectly. This was our family's most emotional and beautiful moment. I cannot recommend UNEXPECTED.SMILE enough.",
+  },
+] as const;
+
+const APPROVED_REVIEWS_KEY = "us_approved_reviews";
+
+function getApprovedReviewIds(): number[] {
+  try {
+    const stored = localStorage.getItem(APPROVED_REVIEWS_KEY);
+    if (!stored) {
+      // Default: all approved
+      return ALL_REVIEWS.map((r) => r.id);
+    }
+    const parsed = JSON.parse(stored);
+    if (Array.isArray(parsed)) {
+      return parsed as number[];
+    }
+    return ALL_REVIEWS.map((r) => r.id);
+  } catch {
+    return ALL_REVIEWS.map((r) => r.id);
+  }
+}
 
 const WHATSAPP_NUMBER = "7672000898";
 const WHATSAPP_LINK = `https://wa.me/91${WHATSAPP_NUMBER}`;
@@ -305,10 +352,12 @@ function PricingCard({
   pkg,
   index,
   onBook,
+  ctaLabel,
 }: {
   pkg: Package;
   index: number;
   onBook: (id: bigint) => void;
+  ctaLabel?: string;
 }) {
   const thumb = PACKAGE_THUMBNAILS[index] ?? PACKAGE_THUMBNAILS[0];
   const voiceLabel = getVoiceLabel(pkg.name);
@@ -440,7 +489,7 @@ function PricingCard({
           }`}
           size="lg"
         >
-          Book This Package
+          {ctaLabel ?? "Book This Package"}
         </Button>
       </div>
     </motion.div>
@@ -449,13 +498,28 @@ function PricingCard({
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { lang, t, setLang } = useLanguage();
   const pricingRef = useRef<HTMLDivElement>(null);
   const [embedEntry, setEmbedEntry] = useState<PortfolioEntry | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [approvedReviewIds, setApprovedReviewIds] = useState<number[]>(() =>
+    getApprovedReviewIds(),
+  );
 
   const { data: packages, isLoading: packagesLoading } = useGetPackages();
   const { data: portfolio, isLoading: portfolioLoading } =
     useGetPublishedPortfolioEntries();
+
+  // Re-read approved reviews whenever localStorage changes (e.g., from admin panel)
+  useEffect(() => {
+    const onStorage = () => setApprovedReviewIds(getApprovedReviewIds());
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const visibleReviews = ALL_REVIEWS.filter((r) =>
+    approvedReviewIds.includes(r.id),
+  );
 
   const scrollToPricing = () => {
     pricingRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -466,29 +530,29 @@ export default function HomePage() {
   };
 
   const navLinks = [
-    { label: "Home", action: scrollToTop, ocid: "nav.home_link" },
+    { label: t.navHome, action: scrollToTop, ocid: "nav.home_link" },
     {
-      label: "Our Services",
+      label: t.navServices,
       action: () => scrollToSection("services"),
       ocid: "nav.services_link",
     },
     {
-      label: "Pricing Details",
+      label: t.navPricing,
       action: () => scrollToSection("pricing"),
       ocid: "nav.pricing_link",
     },
     {
-      label: "Reviews",
+      label: t.navReviews,
       action: () => scrollToSection("reviews"),
       ocid: "nav.reviews_link",
     },
     {
-      label: "My Orders",
+      label: t.navOrders,
       action: () => navigate({ to: "/client-dashboard" }),
       ocid: "nav.orders_link",
     },
     {
-      label: "Contact Us",
+      label: t.navContact,
       action: () => scrollToSection("contact"),
       ocid: "nav.contact_link",
     },
@@ -528,6 +592,25 @@ export default function HomePage() {
 
           {/* Desktop CTAs */}
           <div className="hidden md:flex items-center gap-3">
+            {/* Language Toggle */}
+            <button
+              type="button"
+              data-ocid="nav.lang_toggle"
+              onClick={() => setLang(lang === "en" ? "te" : "en")}
+              className="flex items-center gap-0 rounded-full border border-gold/30 overflow-hidden text-xs font-bold h-7"
+              title="Toggle language"
+            >
+              <span
+                className={`px-2.5 py-1 transition-colors ${lang === "en" ? "bg-gold text-primary-foreground" : "text-muted-foreground hover:text-foreground bg-transparent"}`}
+              >
+                EN
+              </span>
+              <span
+                className={`px-2.5 py-1 transition-colors ${lang === "te" ? "bg-gold text-primary-foreground" : "text-muted-foreground hover:text-foreground bg-transparent"}`}
+              >
+                TE
+              </span>
+            </button>
             <button
               type="button"
               data-ocid="nav.admin_link"
@@ -542,7 +625,7 @@ export default function HomePage() {
               size="sm"
               className="bg-gold text-primary-foreground hover:bg-gold-light font-semibold"
             >
-              Book Your Surprise
+              {t.heroCta}
             </Button>
           </div>
 
@@ -589,6 +672,29 @@ export default function HomePage() {
               </button>
             ))}
             <div className="border-t border-border mt-4 pt-4 space-y-2">
+              {/* Language Toggle (mobile) */}
+              <div className="flex items-center justify-between px-1 py-1">
+                <span className="text-xs text-muted-foreground font-medium">
+                  Language
+                </span>
+                <button
+                  type="button"
+                  data-ocid="nav.lang_toggle"
+                  onClick={() => setLang(lang === "en" ? "te" : "en")}
+                  className="flex items-center gap-0 rounded-full border border-gold/30 overflow-hidden text-xs font-bold h-7"
+                >
+                  <span
+                    className={`px-2.5 py-1 transition-colors ${lang === "en" ? "bg-gold text-primary-foreground" : "text-muted-foreground"}`}
+                  >
+                    EN
+                  </span>
+                  <span
+                    className={`px-2.5 py-1 transition-colors ${lang === "te" ? "bg-gold text-primary-foreground" : "text-muted-foreground"}`}
+                  >
+                    TE
+                  </span>
+                </button>
+              </div>
               <Button
                 data-ocid="nav.book_button"
                 onClick={() => {
@@ -597,7 +703,7 @@ export default function HomePage() {
                 }}
                 className="w-full bg-gold text-primary-foreground hover:bg-gold-light font-semibold"
               >
-                Book Your Surprise
+                {t.heroCta}
               </Button>
               <button
                 type="button"
@@ -642,8 +748,7 @@ export default function HomePage() {
               custom={0.5}
               className="text-muted-foreground/80 text-base sm:text-lg mb-3 font-serif-alt italic"
             >
-              Hello 🙏 Are you missing someone dearly on your upcoming Wedding,
-              Birthday or Special Event?
+              {t.heroGreeting}
             </motion.p>
 
             <motion.h1
@@ -651,11 +756,17 @@ export default function HomePage() {
               custom={1}
               className="font-display text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.1] mb-6"
             >
-              <span className="text-foreground">Bring Their Blessings</span>
-              <br />
-              <span className="text-gradient-gold">
-                Back To Your Special Day
-              </span>
+              {lang === "en" ? (
+                <>
+                  <span className="text-foreground">Bring Their Blessings</span>
+                  <br />
+                  <span className="text-gradient-gold">
+                    Back To Your Special Day
+                  </span>
+                </>
+              ) : (
+                <span className="text-gradient-gold">{t.heroHeadline}</span>
+              )}
             </motion.h1>
 
             <motion.p
@@ -679,7 +790,7 @@ export default function HomePage() {
                 size="lg"
                 className="bg-gold text-primary-foreground hover:bg-gold-light font-semibold text-base px-8 h-14 glow-gold"
               >
-                Book Your Surprise
+                {t.heroCta}
                 <ChevronDown className="ml-2 w-4 h-4" />
               </Button>
               <a
@@ -886,14 +997,13 @@ export default function HomePage() {
               variants={fadeUp}
               className="font-display text-4xl sm:text-5xl font-bold text-foreground"
             >
-              Choose Your Tribute
+              {t.sectionChooseTribute}
             </motion.h2>
             <motion.p
               variants={fadeUp}
               className="text-muted-foreground mt-4 max-w-xl mx-auto"
             >
-              Each package includes a heartfelt AI memorial video crafted
-              specifically for your loved one.
+              {t.sectionTributeSubtitle}
             </motion.p>
           </motion.div>
 
@@ -917,6 +1027,7 @@ export default function HomePage() {
                   pkg={pkg}
                   index={i}
                   onBook={handleBookPackage}
+                  ctaLabel={t.bookThisPackage}
                 />
               ))}
             </motion.div>
@@ -962,7 +1073,7 @@ export default function HomePage() {
               variants={fadeUp}
               className="font-display text-4xl sm:text-5xl font-bold text-foreground"
             >
-              Frequently Asked
+              {t.sectionFaq}
             </motion.h2>
           </motion.div>
 
@@ -1031,7 +1142,7 @@ export default function HomePage() {
               variants={fadeUp}
               className="font-display text-4xl sm:text-5xl font-bold text-foreground"
             >
-              What Families Say
+              {t.sectionReviews}
             </motion.h2>
             <motion.div
               variants={fadeUp}
@@ -1046,67 +1157,62 @@ export default function HomePage() {
             </motion.div>
           </motion.div>
 
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-80px" }}
-            variants={stagger}
-            className="grid grid-cols-1 md:grid-cols-3 gap-6"
-          >
-            {[
-              {
-                name: "Priya Sharma",
-                location: "Hyderabad",
-                event: "Wedding Tribute",
-                rating: 5,
-                text: "We were in tears when we saw the video. My father-in-law who passed away last year was there at the wedding in spirit, and seeing him speak again — it felt like a miracle. UNEXPECTED.SMILE gave us a gift we will treasure forever.",
-              },
-              {
-                name: "Rajesh Kumar",
-                location: "Bangalore",
-                event: "Birthday Surprise",
-                rating: 5,
-                text: "My mother's 60th birthday was made extraordinary. We had a tribute video of my late grandfather blessing her. The quality of the AI recreation was unbelievably realistic — everyone was moved deeply. Truly worth every rupee.",
-              },
-              {
-                name: "Ananya Reddy",
-                location: "Chennai",
-                event: "Family Reunion",
-                rating: 5,
-                text: "The team was incredibly sensitive and professional. They recreated my grandmother's smile and voice perfectly. This was our family's most emotional and beautiful moment. I cannot recommend UNEXPECTED.SMILE enough.",
-              },
-            ].map((review, i) => (
-              <motion.div
-                key={review.name}
-                variants={fadeUp}
-                custom={i}
-                data-ocid={`review.item.${i + 1}`}
-                className="review-card rounded-2xl p-7 flex flex-col gap-4"
-              >
-                <div className="flex items-center gap-1">
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <Star key={s} className="w-4 h-4 star-gold fill-current" />
-                  ))}
-                </div>
-                <p className="text-muted-foreground text-sm leading-relaxed flex-1 font-serif-alt italic">
-                  "{review.text}"
-                </p>
-                <div className="border-t border-border/40 pt-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-foreground font-semibold text-sm">
-                      {review.name}
-                    </p>
-                    <p className="text-muted-foreground/60 text-xs">
-                      {review.location} · {review.event}
-                    </p>
+          {visibleReviews.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              data-ocid="reviews.empty_state"
+              className="text-center py-16 rounded-2xl border border-dashed border-border bg-card/30"
+            >
+              <Star className="w-10 h-10 text-gold/30 mx-auto mb-3" />
+              <p className="text-muted-foreground">
+                Reviews are being curated with care.
+              </p>
+            </motion.div>
+          ) : (
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, margin: "-80px" }}
+              variants={stagger}
+              className="grid grid-cols-1 md:grid-cols-3 gap-6"
+            >
+              {visibleReviews.map((review, i) => (
+                <motion.div
+                  key={review.id}
+                  variants={fadeUp}
+                  custom={i}
+                  data-ocid={`review.item.${i + 1}`}
+                  className="review-card rounded-2xl p-7 flex flex-col gap-4"
+                >
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star
+                        key={s}
+                        className="w-4 h-4 star-gold fill-current"
+                      />
+                    ))}
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center">
-                    <Heart className="w-4 h-4 text-gold" />
+                  <p className="text-muted-foreground text-sm leading-relaxed flex-1 font-serif-alt italic">
+                    "{review.text}"
+                  </p>
+                  <div className="border-t border-border/40 pt-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-foreground font-semibold text-sm">
+                        {review.name}
+                      </p>
+                      <p className="text-muted-foreground/60 text-xs">
+                        {review.location} · {review.event}
+                      </p>
+                    </div>
+                    <div className="w-8 h-8 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center">
+                      <Heart className="w-4 h-4 text-gold" />
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
-          </motion.div>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
         </div>
       </section>
 
@@ -1240,7 +1346,7 @@ export default function HomePage() {
                 </span>
               </div>
               <p className="text-muted-foreground text-sm italic font-serif-alt">
-                Honouring lives. Preserving legacies. Forever.
+                {t.footerTagline}
               </p>
             </div>
 
